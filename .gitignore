@@ -1,0 +1,23 @@
+# PyInstaller / build output
+build/
+dist/
+*.spec
+
+# Python
+__pycache__/
+*.pyc
+
+# OS cruft
+.DS_Store
+
+# Large media / downloads — don't commit these to the repo
+*.mp4
+*.mkv
+*.webm
+*.m4a
+*.mov
+*.avi
+*.part
+*.ytdl
+Zeeshu Wedding/
+Suron Ka Safar*/

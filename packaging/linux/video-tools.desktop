@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Video Tools
+GenericName=Video Utility
+Comment=Clip, download and mix videos
+Exec=video-tools
+Icon=video-tools
+Terminal=false
+Categories=AudioVideo;Utility;
+Keywords=video;clip;download;youtube;ffmpeg;mix;
