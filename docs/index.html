@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Video Tools — download</title>
+<meta name="description" content="Clip, download and mix videos. A free desktop app for macOS, Windows and Linux.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='0' y2='1'%3E%3Cstop offset='0' stop-color='%235a4fe6'/%3E%3Cstop offset='1' stop-color='%23965cf6'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect x='8' y='8' width='84' height='84' rx='20' fill='url(%23g)'/%3E%3Cpath d='M42 34 L68 50 L42 66 Z' fill='white'/%3E%3C/svg%3E">
+<style>
+  :root{
+    --bg:#f6f7fb; --card:#ffffff; --text:#1b1d28; --muted:#5b5f72;
+    --border:#e6e8f0; --brand1:#5a4fe6; --brand2:#965cf6; --accent:#5a4fe6;
+    --code:#f0f1f6;
+  }
+  :root:not([data-theme="light"]) @media (prefers-color-scheme: dark){}
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#14151c; --card:#1d1f2a; --text:#eceef6; --muted:#a2a7bd;
+      --border:#2b2e3c; --code:#23252f;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#14151c; --card:#1d1f2a; --text:#eceef6; --muted:#a2a7bd;
+    --border:#2b2e3c; --code:#23252f;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);
+    font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased}
+  .wrap{max-width:860px;margin:0 auto;padding:0 16px}
+  header{text-align:center;padding:64px 16px 24px}
+  .logo{width:88px;height:88px;filter:drop-shadow(0 8px 24px rgba(90,79,230,.35))}
+  h1{font-size:2.3rem;margin:18px 0 6px;letter-spacing:-.02em}
+  .tag{color:var(--muted);font-size:1.15rem;margin:0 auto;max-width:34ch}
+  .detected{margin:26px 0 8px;color:var(--muted);font-size:.95rem}
+  .downloads{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin:18px 0 8px}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:14px;
+    padding:20px;text-align:center;transition:transform .12s ease,border-color .12s ease}
+  .card:hover{transform:translateY(-2px)}
+  .card.primary{border-color:var(--brand1);box-shadow:0 10px 30px rgba(90,79,230,.14)}
+  .os{font-weight:650;font-size:1.1rem;margin:6px 0 2px}
+  .meta{color:var(--muted);font-size:.85rem;margin-bottom:14px}
+  .btn{display:inline-block;background:linear-gradient(135deg,var(--brand1),var(--brand2));
+    color:#fff;text-decoration:none;font-weight:600;padding:11px 20px;border-radius:10px;font-size:.98rem}
+  .btn.secondary{background:transparent;color:var(--accent);border:1px solid var(--border);font-weight:550}
+  .alllink{text-align:center;margin:8px 0 10px}
+  .alllink a{color:var(--accent)}
+  section{background:var(--card);border:1px solid var(--border);border-radius:16px;
+    padding:24px 26px;margin:28px 0}
+  section h2{margin:0 0 12px;font-size:1.25rem}
+  details{border-top:1px solid var(--border);padding:12px 0}
+  details:first-of-type{border-top:0}
+  summary{cursor:pointer;font-weight:600}
+  code,kbd{background:var(--code);padding:2px 6px;border-radius:6px;font-size:.88em}
+  pre{background:var(--code);padding:12px 14px;border-radius:10px;overflow:auto}
+  .note{color:var(--muted);font-size:.92rem}
+  ul{padding-left:1.1rem}
+  footer{text-align:center;color:var(--muted);font-size:.85rem;padding:40px 16px 60px}
+  svg.ico{width:28px;height:28px;vertical-align:middle;margin-right:6px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <svg class="logo" viewBox="0 0 100 100" aria-hidden="true">
+      <defs><linearGradient id="lg" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#5a4fe6"/><stop offset="1" stop-color="#965cf6"/>
+      </linearGradient></defs>
+      <rect x="8" y="8" width="84" height="84" rx="20" fill="url(#lg)"/>
+      <path d="M42 34 L68 50 L42 66 Z" fill="white"/>
+    </svg>
+    <h1>Video Tools</h1>
+    <p class="tag">Clip, download and mix videos — a free desktop app for macOS, Windows and Linux.</p>
+    <p class="detected" id="detected"></p>
+  </header>
+
+  <div class="downloads" id="downloads">
+    <div class="card" data-os="mac">
+      <div class="os">macOS</div>
+      <div class="meta">Apple Silicon &amp; Intel · .dmg</div>
+      <a class="btn" href="https://github.com/mshammas/video-tools/releases/latest/download/video-tools-1.0.0-macos.dmg">Download</a>
+    </div>
+    <div class="card" data-os="windows">
+      <div class="os">Windows</div>
+      <div class="meta">64-bit · .zip (.exe inside)</div>
+      <a class="btn" href="https://github.com/mshammas/video-tools/releases/latest/download/video-tools-1.0.0-windows.zip">Download</a>
+    </div>
+    <div class="card" data-os="linux">
+      <div class="os">Linux</div>
+      <div class="meta">x86-64 · .tar.gz</div>
+      <a class="btn" href="https://github.com/mshammas/video-tools/releases/latest/download/video-tools-1.0.0-linux.tar.gz">Download</a>
+    </div>
+  </div>
+  <p class="alllink"><a href="https://github.com/mshammas/video-tools/releases/latest">All downloads &amp; release notes →</a></p>
+
+  <section>
+    <h2>What it does</h2>
+    <ul>
+      <li><strong>Clip</strong> — cut a segment from a local file or a YouTube link.</li>
+      <li><strong>Download</strong> — grab a YouTube video (MP4 or MKV), optionally split by chapter.</li>
+      <li><strong>Mix</strong> — join clips with crossfades, lay them out in a grid, or blend them.</li>
+    </ul>
+    <p class="note">On first use the app downloads the video engines it needs
+      (ffmpeg and yt-dlp) automatically — this needs an internet connection once.</p>
+  </section>
+
+  <section>
+    <h2>Installing</h2>
+    <details open><summary>macOS</summary>
+      <p>Open the <code>.dmg</code> and drag <strong>Video Tools</strong> to Applications.
+      The app isn't signed yet, so the first time:
+      <strong>right-click it → Open → Open</strong> (a normal double-click will be blocked once).</p>
+    </details>
+    <details><summary>Windows</summary>
+      <p>Unzip and run <code>video-tools.exe</code>. SmartScreen may warn about an
+      unrecognized app — click <strong>More info → Run anyway</strong>.
+      The <em>Download</em> tab also needs <a href="https://learn.microsoft.com/windows/wsl/install">WSL</a>
+      or <a href="https://gitforwindows.org/">Git Bash</a>; Clip and Mix do not.</p>
+    </details>
+    <details><summary>Linux</summary>
+      <p>Extract the tarball and run <code>./video-tools</code>, or install it for the app menu:</p>
+      <pre>tar xzf video-tools-1.0.0-linux.tar.gz
+cd video-tools-1.0.0-linux
+install -Dm755 video-tools ~/.local/bin/video-tools
+install -Dm644 video-tools.png ~/.local/share/icons/hicolor/256x256/apps/video-tools.png
+install -Dm644 video-tools.desktop ~/.local/share/applications/video-tools.desktop</pre>
+    </details>
+  </section>
+
+  <footer>
+    <p>Video Tools · open source · <a href="https://github.com/mshammas/video-tools">source on GitHub</a></p>
+  </footer>
+</div>
+
+<script>
+  // Point the buttons at the newest release's assets (so the page never needs
+  // editing when a new version ships). Falls back to the hard-coded links.
+  (function () {
+    var suffix = {mac: "-macos.dmg", windows: "-windows.zip", linux: "-linux.tar.gz"};
+    fetch("https://api.github.com/repos/mshammas/video-tools/releases/latest")
+      .then(function (r) { return r.ok ? r.json() : Promise.reject(); })
+      .then(function (rel) {
+        (rel.assets || []).forEach(function (a) {
+          for (var os in suffix) {
+            if (a.name.endsWith(suffix[os])) {
+              var btn = document.querySelector('.card[data-os="' + os + '"] .btn');
+              if (btn) btn.href = a.browser_download_url;
+            }
+          }
+        });
+      })
+      .catch(function () { /* keep the static hrefs */ });
+  })();
+
+  // Highlight the visitor's platform and label it.
+  (function () {
+    var p = (navigator.userAgentData && navigator.userAgentData.platform || navigator.platform || "").toLowerCase();
+    var ua = navigator.userAgent.toLowerCase();
+    var os = "mac";
+    if (p.indexOf("win") > -1) os = "windows";
+    else if (p.indexOf("linux") > -1 && ua.indexOf("android") === -1) os = "linux";
+    else if (p.indexOf("mac") > -1 || ua.indexOf("mac") > -1) os = "mac";
+    var label = {mac: "macOS", windows: "Windows", linux: "Linux"}[os];
+    document.getElementById("detected").textContent = "Detected " + label + " — recommended download highlighted below.";
+    var card = document.querySelector('.card[data-os="' + os + '"]');
+    if (card) { card.classList.add("primary"); card.parentNode.prepend(card); }
+  })();
+</script>
+</body>
+</html>
