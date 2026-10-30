@@ -89,17 +89,32 @@ def package_macos():
                             f"Set :{key} {appinfo.APP_VERSION}", str(plist)],
                            capture_output=True)
     # Editing Info.plist invalidates the ad-hoc signature PyInstaller applied,
-    # and macOS then reports the app as "damaged and can't be opened" — an
-    # error that right-click > Open cannot bypass. Re-sign so the bundle
-    # verifies again. It is still only ad-hoc, so Gatekeeper falls back to the
-    # ordinary unidentified-developer warning, which right-click > Open clears.
+    # and macOS then reports the app as "damaged and can't be opened". Re-sign
+    # so the bundle verifies again; it is still only ad-hoc, so Gatekeeper
+    # falls back to the milder "Apple could not verify" prompt. That prompt is
+    # cleared by removing the quarantine attribute or by Open Anyway in System
+    # Settings — on macOS 15+ right-click > Open no longer offers a bypass.
     run(["codesign", "--force", "--deep", "--sign", "-", str(app)])
     run(["codesign", "--verify", "--deep", "--strict", str(app)])
+    # Lay the disk image out as a drag-and-drop installer: the app next to a
+    # symlink to /Applications, so opening the dmg shows both and the app is
+    # installed by dragging one onto the other. ditto rather than copytree,
+    # because it keeps the extended attributes the signature is stored in.
+    stage = DIST / "dmg"
+    if stage.exists():
+        shutil.rmtree(stage)
+    stage.mkdir(parents=True)
+    run(["ditto", str(app), str(stage / app.name)])
+    (stage / "Applications").symlink_to("/Applications")
+    # The copy is what ships, so verify that one rather than the original.
+    run(["codesign", "--verify", "--deep", "--strict", str(stage / app.name)])
+
     dmg = DIST / f"{appinfo.APP_SLUG}-{appinfo.APP_VERSION}-macos.dmg"
     if dmg.exists():
         dmg.unlink()
-    run(["hdiutil", "create", "-volname", appinfo.APP_NAME, "-srcfolder", str(app),
+    run(["hdiutil", "create", "-volname", appinfo.APP_NAME, "-srcfolder", str(stage),
          "-ov", "-format", "UDZO", str(dmg)])
+    shutil.rmtree(stage)
     return dmg
 
 

@@ -40,10 +40,12 @@ to GitHub.
    `deps.py` (pip / Homebrew / apt / winget …). Developers have those; a typical
    end user may not. For a frictionless website download, bundle the binaries or
    add a first-run auto-download. *(Not yet done — ask to add it.)*
-2. **Code signing / notarization.** The macOS `.app` and the Windows `.exe` are
-   unsigned, so Gatekeeper / SmartScreen will warn users (right-click → Open on
-   macOS). Shipping without warnings needs an Apple Developer ID (notarization)
-   and a Windows code-signing certificate.
+2. **Code signing / notarization.** The macOS `.app` is only ad-hoc signed and
+   the Windows `.exe` is unsigned, so Gatekeeper / SmartScreen will warn users.
+   On macOS 15+ there is no right-click → Open bypass: the user clears it with
+   `xattr -dr com.apple.quarantine <app>`, or **Open Anyway** in System Settings
+   → Privacy & Security. Shipping without warnings needs an Apple Developer ID
+   (notarization) and a Windows code-signing certificate.
 3. **Download tab needs bash on Windows.** `yt-download.sh` is a bash script;
    the Download tab requires WSL or Git Bash on Windows. The Clip and Mix tabs
    are pure Python and need no bash.
