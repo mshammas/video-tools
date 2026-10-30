@@ -88,6 +88,13 @@ def package_macos():
             subprocess.run(["/usr/libexec/PlistBuddy", "-c",
                             f"Set :{key} {appinfo.APP_VERSION}", str(plist)],
                            capture_output=True)
+    # Editing Info.plist invalidates the ad-hoc signature PyInstaller applied,
+    # and macOS then reports the app as "damaged and can't be opened" — an
+    # error that right-click > Open cannot bypass. Re-sign so the bundle
+    # verifies again. It is still only ad-hoc, so Gatekeeper falls back to the
+    # ordinary unidentified-developer warning, which right-click > Open clears.
+    run(["codesign", "--force", "--deep", "--sign", "-", str(app)])
+    run(["codesign", "--verify", "--deep", "--strict", str(app)])
     dmg = DIST / f"{appinfo.APP_SLUG}-{appinfo.APP_VERSION}-macos.dmg"
     if dmg.exists():
         dmg.unlink()
