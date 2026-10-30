@@ -47,3 +47,28 @@ jobs:
           name: video-tools-${{ matrix.name }}
           path: ${{ matrix.artifact }}
           if-no-files-found: error
+
+  # On a version tag (e.g. v1.0.0), gather the three installers and publish a
+  # GitHub Release with them attached — giving stable, versioned download links.
+  release:
+    name: Publish release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download all installers
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create / update the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            --repo "${{ github.repository }}" \
+            --title "${{ github.ref_name }}" \
+            --generate-notes \
+            artifacts/*/*
