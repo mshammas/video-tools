@@ -7,7 +7,7 @@ generator, and the packaging/build config so they never drift apart.
 
 APP_NAME = "Video Tools"
 APP_SLUG = "video-tools"                     # file- and command-friendly name
-APP_VERSION = "1.0.3"
+APP_VERSION = "1.0.4"
 APP_IDENTIFIER = "com.shammas.videotools"    # macOS bundle id / general app id
 APP_AUTHOR = "Shammas"
 APP_DESCRIPTION = "Clip, download and mix videos."
