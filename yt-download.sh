@@ -202,6 +202,34 @@ fi
 have() { command -v "$1" >/dev/null 2>&1; }
 OS_NAME="$(uname -s 2>/dev/null || echo unknown)"
 
+# Python 3 (only needed for --chapters). Windows has no `python3` command —
+# Python installs as `python`, with a `py` launcher alongside it — and the
+# python3.exe/python.exe sitting in WindowsApps is a stub that opens the
+# Microsoft Store instead of running anything, so `command -v` proves nothing
+# there. Find an interpreter that actually answers as Python 3 and remember it.
+PY=()
+resolve_python() {
+  [[ ${#PY[@]} -gt 0 ]] && return 0
+  local cand path lower
+  for cand in python3 python; do
+    path="$(command -v "$cand" 2>/dev/null)" || continue
+    lower="$(printf '%s' "$path" | tr '[:upper:]' '[:lower:]')"
+    case "$lower" in */windowsapps/*) continue ;; esac   # the Store stub
+    if "$cand" -c 'import sys; sys.exit(sys.version_info[0] != 3)' >/dev/null 2>&1; then
+      PY=("$cand"); return 0
+    fi
+  done
+  if have py && py -3 -c 'import sys; sys.exit(sys.version_info[0] != 3)' >/dev/null 2>&1; then
+    PY=(py -3); return 0
+  fi
+  return 1
+}
+
+# Presence test for the dependency loop; python3 needs the probe above.
+dep_present() {
+  if [[ "$1" == "python3" ]]; then resolve_python; else have "$1"; fi
+}
+
 pkg_manager() {
   case "$OS_NAME" in
     Darwin) have brew && { echo brew; return; } ;;
@@ -220,7 +248,7 @@ manual_hint() {
   case "$1" in
     yt-dlp)  echo "python3 -m pip install -U --pre \"yt-dlp[default]\"  (or see https://github.com/yt-dlp/yt-dlp#installation)" ;;
     ffmpeg)  echo "install ffmpeg from your package manager, or https://ffmpeg.org/download.html" ;;
-    python3) echo "install python3 from your package manager, or https://www.python.org/downloads/" ;;
+    python3) echo "install Python 3 from your package manager, or https://www.python.org/downloads/ (on Windows: winget install Python.Python.3.12 — the Microsoft Store stub does not count)" ;;
   esac
 }
 
@@ -228,11 +256,11 @@ install_dep() {
   local dep="$1" mgr pkg SUDO
   mgr="$(pkg_manager)"; SUDO="$(maybe_sudo)"
   # yt-dlp installs most reliably — and newest — via pip when Python is present.
-  if [[ "$dep" == "yt-dlp" ]] && have python3; then
-    echo "  -> python3 -m pip install -U --pre \"yt-dlp[default]\"" >&2
-    python3 -m pip install -U --pre "yt-dlp[default]" && return 0
+  if [[ "$dep" == "yt-dlp" ]] && resolve_python; then
+    echo "  -> ${PY[*]} -m pip install -U --pre \"yt-dlp[default]\"" >&2
+    "${PY[@]}" -m pip install -U --pre "yt-dlp[default]" && return 0
     echo "  (system pip refused; retrying with --user)" >&2
-    python3 -m pip install --user -U --pre "yt-dlp[default]" && return 0
+    "${PY[@]}" -m pip install --user -U --pre "yt-dlp[default]" && return 0
   fi
   [[ -z "$mgr" ]] && return 1
   # Map the generic name to this manager's package id.
@@ -261,7 +289,7 @@ install_dep() {
 REQUIRED=(yt-dlp ffmpeg)
 [[ "$CHAPTERS" -eq 1 ]] && REQUIRED+=(python3)
 for cmd in "${REQUIRED[@]}"; do
-  have "$cmd" && continue
+  dep_present "$cmd" && continue
   if (( NO_INSTALL )); then
     echo "Error: '$cmd' is not installed. Install it with:" >&2
     echo "  $(manual_hint "$cmd")" >&2
@@ -270,7 +298,8 @@ for cmd in "${REQUIRED[@]}"; do
   echo "Dependency '$cmd' is missing — attempting to install it..." >&2
   install_dep "$cmd" || true
   hash -r 2>/dev/null || true   # forget cached command locations after install
-  if ! have "$cmd"; then
+  PY=()                         # and re-probe for the interpreter just installed
+  if ! dep_present "$cmd"; then
     echo "Error: could not install '$cmd' automatically." >&2
     echo "  Install it manually, then re-run:" >&2
     echo "    $(manual_hint "$cmd")" >&2
@@ -461,7 +490,12 @@ build_chapters_tsv() {
   local url="$1" nch
   echo "Fetching video info to locate chapters..." >&2
   CHAPTERS_TSV="$(mktemp -t yt-chapters.XXXXXX)"; ITEM_TMPFILES+=("$CHAPTERS_TSV")
-  if ! yt-dlp -J --no-playlist "$url" 2>/dev/null | python3 "$pyhelper" > "$CHAPTERS_TSV"; then
+  if ! resolve_python; then
+    echo "Error: no working Python 3 found to read the chapter list." >&2
+    echo "       $(manual_hint python3)" >&2
+    return 1
+  fi
+  if ! yt-dlp -J --no-playlist "$url" 2>/dev/null | "${PY[@]}" "$pyhelper" > "$CHAPTERS_TSV"; then
     echo "Error: could not fetch or parse video info for chapters." >&2
     return 1
   fi

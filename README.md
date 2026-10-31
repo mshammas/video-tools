@@ -102,7 +102,7 @@ Download YouTube videos in their highest available resolution. It takes one URL 
 ### Requirements
 
 - [yt-dlp](https://github.com/yt-dlp/yt-dlp) and [ffmpeg](https://ffmpeg.org/) on your PATH: `brew install yt-dlp ffmpeg`
-- Python 3 (only needed for `--chapters`)
+- Python 3 (only needed for `--chapters`). On Windows the script accepts `python` or the `py -3` launcher, since there is usually no `python3` command; the `python3.exe` stub in `WindowsApps` is skipped, because it opens the Microsoft Store instead of running anything.
 - On Windows, a bash to run it in: [Git for Windows](https://git-scm.com/download/win) gives you Git Bash, which is the one the GUI uses. Running it inside WSL works too, but then yt-dlp, ffmpeg and the paths you give it all have to be WSL-side.
 
 ### Usage
