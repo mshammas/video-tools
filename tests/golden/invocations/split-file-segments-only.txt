@@ -1,0 +1,6 @@
+exit 0
+yt-dlp ["--version"]
+yt-dlp ["-J", "--no-playlist", "https://www.youtube.com/watch?v=dQw4w9WgXcQ"]
+ffmpeg ["-nostdin", "-v", "error", "-y", "-ss", "0.000", "-i", "@SRC@", "-t", "100.000", "-map", "0", "-c", "copy", "-avoid_negative_ts", "make_zero", "@ROOT@/source/01 - One intro.mp4"]
+ffmpeg ["-nostdin", "-v", "error", "-y", "-ss", "100.000", "-i", "@SRC@", "-t", "100.000", "-map", "0", "-c", "copy", "-avoid_negative_ts", "make_zero", "@ROOT@/source/02 - Two bad chars.mp4"]
+ffmpeg ["-nostdin", "-v", "error", "-y", "-ss", "200.000", "-i", "@SRC@", "-t", "100.000", "-map", "0", "-c", "copy", "-avoid_negative_ts", "make_zero", "@ROOT@/source/03 - Three.mp4"]

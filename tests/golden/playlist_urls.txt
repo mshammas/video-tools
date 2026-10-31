@@ -1,0 +1,15 @@
+no	https://www.youtube.com/watch?v=abc
+no	https://youtu.be/abc
+yes	https://www.youtube.com/playlist?list=PL123
+yes	https://www.youtube.com/watch?v=abc&list=PL123
+yes	https://www.youtube.com/@someone/videos
+yes	https://www.youtube.com/@someone/videos/
+yes	https://www.youtube.com/@someone/videos?view=0
+yes	https://www.youtube.com/c/Channel/videos
+yes	https://www.youtube.com/@someone/shorts
+no	https://www.youtube.com/shorts/abc123
+no	https://www.youtube.com/shorts/abc123?feature=share
+yes	https://www.youtube.com/@someone/streams
+no	https://www.youtube.com/@someone
+no	https://www.youtube.com/@someone/videos/extra
+no	https://www.youtube.com/@someone/featured

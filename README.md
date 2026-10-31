@@ -366,3 +366,13 @@ python3 updates.py
 ```
 
 The preference lives in `settings.json` next to the managed tool binaries — `~/Library/Application Support/VideoTools/` on macOS, `%LOCALAPPDATA%\VideoTools\` on Windows, `~/.config/video-tools/` on Linux.
+
+## Tests
+
+`yt_download.py` has a test suite. Standard library only, nothing downloaded, no yt-dlp or ffmpeg needed:
+
+```bash
+python3 -m unittest discover -s tests
+```
+
+It finishes in well under a second and runs on macOS, Linux and Windows alike — CI runs it on all three for every push and pull request. The expected command lines were captured from `yt-download.sh`, the bash script the downloader replaced, so the tests check the port still behaves the way the script did. See [tests/README.md](tests/README.md) for how the goldens were made and what they cover.

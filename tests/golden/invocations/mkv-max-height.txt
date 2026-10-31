@@ -1,0 +1,4 @@
+exit 0
+yt-dlp ["--version"]
+yt-dlp ["-f", "bv*[acodec=none][height<=720]+ba[vcodec=none]/b[height<=720]", "--no-playlist", "--simulate", "--print", "%(filesize,filesize_approx)s", "https://www.youtube.com/watch?v=dQw4w9WgXcQ"]
+yt-dlp ["--format", "bv*[acodec=none][height<=720]+ba[vcodec=none]/b[height<=720]", "--output", "@OUT@/%(title)s [%(id)s].%(ext)s", "--embed-metadata", "--embed-thumbnail", "--no-playlist", "--merge-output-format", "mkv", "https://www.youtube.com/watch?v=dQw4w9WgXcQ"]

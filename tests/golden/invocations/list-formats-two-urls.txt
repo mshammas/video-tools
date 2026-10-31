@@ -1,0 +1,4 @@
+exit 0
+yt-dlp ["--version"]
+yt-dlp ["-F", "--no-playlist", "https://www.youtube.com/watch?v=dQw4w9WgXcQ"]
+yt-dlp ["-F", "--no-playlist", "https://youtu.be/abc"]

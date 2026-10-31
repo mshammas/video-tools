@@ -1,0 +1,4 @@
+exit 0
+yt-dlp ["--version"]
+yt-dlp ["-f", "bv*[acodec=none]+ba[vcodec=none]/b", "--no-playlist", "--simulate", "--print", "%(filesize,filesize_approx)s", "https://www.youtube.com/watch?v=dQw4w9WgXcQ"]
+yt-dlp ["--format", "bv*[acodec=none]+ba[vcodec=none]/b", "--output", "@OUT@/%(title)s [%(id)s].%(ext)s", "--embed-metadata", "--embed-thumbnail", "--no-playlist", "--merge-output-format", "mp4", "https://www.youtube.com/watch?v=dQw4w9WgXcQ"]
