@@ -51,9 +51,7 @@ to GitHub.
    dragging the app across — or uses **Open Anyway** in System Settings →
    Privacy & Security. Shipping without warnings needs an Apple Developer ID
    (notarization) and a Windows code-signing certificate.
-3. **Download tab needs Git Bash on Windows.** `yt-download.sh` is a bash
-   script, and the only Windows bash that can run it is Git Bash, from Git for
-   Windows (the app offers to install it). WSL's `bash.exe` is skipped on
-   purpose: it runs in the Linux VM, which sees neither the app's `C:\` paths
-   nor the Windows ffmpeg/yt-dlp. The Clip and Mix tabs are pure Python and
-   need no bash.
+3. **No shell needed on Windows.** Every tab, the Download one included, is
+   pure Python: the bundled `yt_download.py` runs through the frozen app's own
+   `--run-tool` dispatcher, so there is no bash, Git for Windows or WSL in the
+   picture and nothing to install beyond ffmpeg/yt-dlp.

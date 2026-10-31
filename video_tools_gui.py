@@ -3,7 +3,7 @@
 
 Tabs:
   Clip      clip_video.py   - cut a segment from a local file or YouTube link
-  Download  yt-download.sh  - download YouTube videos (one, many or a playlist),
+  Download  yt_download.py  - download YouTube videos (one, many or a playlist),
                               optionally split by chapter
   Mix       mix_videos.py   - concat (with crossfades), grid or blend videos
 
@@ -15,10 +15,8 @@ auto-install when missing (see deps.py); the output streams into the log.
 The Help menu checks GitHub Releases for a newer version (see updates.py); the
 daily automatic check can be switched off there.
 
-Runs on macOS, Linux and Windows. The Download tab shells out to yt-download.sh,
-so on Windows it needs Git Bash (from Git for Windows); the other tabs are pure
-Python. WSL's bash cannot be used: it runs in the Linux VM, which has neither
-the Windows drive paths nor the Windows ffmpeg/yt-dlp this app installs.
+Runs on macOS, Linux and Windows, with no shell required: every tab is pure
+Python and needs only ffmpeg / yt-dlp.
 
 Run:  python3 video_tools_gui.py
 """
@@ -47,7 +45,8 @@ sys.path.insert(0, str(HERE))
 def _run_subtool_and_exit():
     """`<app> --run-tool NAME ...` runs a bundled sub-tool instead of the GUI.
 
-    The GUI shells out to sys.executable to run clip_video / mix_videos / deps.
+    The GUI shells out to sys.executable to run clip_video / yt_download /
+    mix_videos / deps.
     When frozen, sys.executable IS this app, so it must be able to act as those
     tools. We dispatch here, before importing tkinter, and never return.
     """
@@ -57,6 +56,9 @@ def _run_subtool_and_exit():
         if name == "clip_video":
             import clip_video
             sys.exit(clip_video.main())
+        if name == "yt_download":
+            import yt_download
+            sys.exit(yt_download.main())
         if name == "mix_videos":
             import mix_videos
             sys.exit(mix_videos.main())
@@ -98,13 +100,14 @@ PRESETS = ["ultrafast", "superfast", "veryfast", "faster", "fast", "medium", "sl
 
 FFMPEG_TIME_RE = re.compile(r"time=\s*(\d+):(\d+):(\d+(?:\.\d+)?)")
 PERCENT_RE = re.compile(r"(\d{1,3}(?:\.\d+)?)%")
-# yt-download.sh prints "=== [3/7] <url>" before each video of a batch, which is
+# yt_download.py prints "=== [3/7] <url>" before each video of a batch, which is
 # how we turn one video's progress into progress over the whole batch.
 BATCH_RE = re.compile(r"^=== \[(\d+)/(\d+)\]", re.M)
 
 
 def tool_cmd(name, *args):
-    """Command to run a bundled Python sub-tool (clip_video / mix_videos / deps).
+    """Command to run a bundled Python sub-tool (clip_video / yt_download /
+    mix_videos / deps).
 
     From source: run the .py with this interpreter. When frozen: re-invoke this
     app with --run-tool, which the dispatcher turns into that tool (PYTHONUNBUFFERED
@@ -333,13 +336,10 @@ def ensure_ready(runner, tools):
     if runner.busy:
         messagebox.showinfo("Busy", "Finish the current job first, then try again.")
         return False
-    # "bash" is an odd thing to offer a Windows user; name what actually installs.
-    names = ["Git for Windows (it provides bash)" if t == "bash" and os.name == "nt"
-             else t for t in missing]
     if messagebox.askyesno(
             "Set up tools",
             "These tools are needed and will be downloaded now:\n    "
-            + ", ".join(names)
+            + ", ".join(missing)
             + "\n\nThis is a one-time setup. Progress shows in the log below — "
               "click the button again once it finishes."):
         runner.start(tool_cmd("deps", *missing), cwd=str(HERE))
@@ -566,27 +566,8 @@ class DownloadTab(ttk.Frame):
             self.split_file.set(path)
 
     def script(self):
-        """Prefix to run yt-download.sh. Finds bash cross-platform (Git Bash on
-        Windows); returns None with a helpful dialog if bash isn't available."""
-        bash = deps.find_bash()
-        if not bash:
-            messagebox.showerror(
-                "Download",
-                "The Download tab runs yt-download.sh, which needs 'bash'.\n\n"
-                + ("Install Git for Windows (https://git-scm.com/download/win), "
-                   "which includes Git Bash, then reopen this app.\n\n"
-                   "WSL's bash will not do: it runs inside the Linux VM, which "
-                   "cannot open your Windows folders or use the ffmpeg and "
-                   "yt-dlp this app installs."
-                   if os.name == "nt" else
-                   "Install bash with your package manager, then reopen this app."))
-            return None
-        path = str(HERE / "yt-download.sh")
-        if os.name == "nt":
-            # Git Bash takes Windows paths, but forward slashes keep its MSYS
-            # layer from reading a backslash as an escape.
-            path = path.replace("\\", "/")
-        return [bash, path]
+        """Command prefix that runs the downloader (see tool_cmd)."""
+        return tool_cmd("yt_download")
 
     def need_urls(self):
         urls = self.urls()
@@ -595,17 +576,13 @@ class DownloadTab(ttk.Frame):
         return urls
 
     def update_ytdlp(self):
-        script = self.script()
-        if script:
-            self.runner.start(script + ["--update"], cwd=str(HERE))
+        self.runner.start(self.script() + ["--update"], cwd=str(HERE))
 
     def list_formats(self):
         urls = self.need_urls()
-        if not urls or not ensure_ready(self.runner, ["bash", "yt-dlp"]):
+        if not urls or not ensure_ready(self.runner, ["yt-dlp"]):
             return
         script = self.script()
-        if not script:
-            return
         if len(urls) > 1:
             self.runner.note(f"Listing formats for the first URL only: {urls[0]}")
         self.runner.start(script + ["-F", urls[0]], cwd=str(HERE))
@@ -614,11 +591,9 @@ class DownloadTab(ttk.Frame):
         urls = self.need_urls()
         if not urls:
             return
-        if not ensure_ready(self.runner, ["bash", "ffmpeg", "yt-dlp"]):
+        if not ensure_ready(self.runner, ["ffmpeg", "yt-dlp"]):
             return
         cmd = self.script()
-        if not cmd:
-            return
         split_file = self.split_file.get().strip()
         if split_file:
             if len(urls) > 1:

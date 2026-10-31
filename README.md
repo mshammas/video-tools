@@ -1,7 +1,7 @@
 # tools
 
 - [clip_video.py](#clip_videopy): clip a segment out of a local video or a YouTube video
-- [yt-download.sh](#yt-downloadsh): download whole YouTube videos in the best quality — one, a list of them, or a playlist — optionally split into chapters
+- [yt_download.py](#yt_downloadpy): download whole YouTube videos in the best quality — one, a list of them, or a playlist — optionally split into chapters
 - [mix_videos.py](#mix_videospy): join videos one after another (with optional crossfades), in a grid, or blended together
 - [video_tools_gui.py](#video_tools_guipy): a desktop window for all three tools
 
@@ -95,23 +95,24 @@ Video is stored as keyframes with partial frames in between, and a clip can only
 - **Default:** re-encodes the clip so it starts and ends exactly at the times you give. Slower, and takes longer for long clips.
 - **`--fast`:** copies the original streams without re-encoding. Nearly instant and loses no quality, but the start can be off by a second or more.
 
-## yt-download.sh
+## yt_download.py
 
 Download YouTube videos in their highest available resolution. It takes one URL or many, expands a playlist into the videos it contains, and can split each video into one file per chapter.
 
 ### Requirements
 
+- Python 3.8+
 - [yt-dlp](https://github.com/yt-dlp/yt-dlp) and [ffmpeg](https://ffmpeg.org/) on your PATH: `brew install yt-dlp ffmpeg`
-- Python 3 (only needed for `--chapters`). On Windows the script accepts `python` or the `py -3` launcher, since there is usually no `python3` command; the `python3.exe` stub in `WindowsApps` is skipped, because it opens the Microsoft Store instead of running anything.
-- On Windows, a bash to run it in: [Git for Windows](https://git-scm.com/download/win) gives you Git Bash, which is the one the GUI uses. Running it inside WSL works too, but then yt-dlp, ffmpeg and the paths you give it all have to be WSL-side.
+
+Runs the same on macOS, Linux and Windows — it is plain Python, so Windows needs no bash, no Git for Windows and no WSL.
 
 ### Usage
 
 ```
-./yt-download.sh [options] <youtube-url> [<youtube-url> ...]
+./yt_download.py [options] <youtube-url> [<youtube-url> ...]
 ```
 
-Files are saved as `<title> [<video id>].<ext>`. Run `./yt-download.sh --help` for the full option list.
+Files are saved as `<title> [<video id>].<ext>`. Run `./yt_download.py --help` for the full option list.
 
 | Option | Description |
 | --- | --- |
@@ -141,67 +142,67 @@ Files are saved as `<title> [<video id>].<ext>`. Run `./yt-download.sh --help` f
 Download in the best quality as a QuickTime-friendly MP4 (up to 1080p):
 
 ```bash
-./yt-download.sh "https://www.youtube.com/watch?v=VIDEO_ID"
+./yt_download.py "https://www.youtube.com/watch?v=VIDEO_ID"
 ```
 
 Download the highest resolution available, including 4K, as MKV:
 
 ```bash
-./yt-download.sh --mkv "https://www.youtube.com/watch?v=VIDEO_ID"
+./yt_download.py --mkv "https://www.youtube.com/watch?v=VIDEO_ID"
 ```
 
 Cap the resolution at 720p and save into a folder:
 
 ```bash
-./yt-download.sh -m 720 -o ~/Videos "https://www.youtube.com/watch?v=VIDEO_ID"
+./yt_download.py -m 720 -o ~/Videos "https://www.youtube.com/watch?v=VIDEO_ID"
 ```
 
 See which formats and resolutions a video offers, without downloading:
 
 ```bash
-./yt-download.sh -F "https://www.youtube.com/watch?v=VIDEO_ID"
+./yt_download.py -F "https://www.youtube.com/watch?v=VIDEO_ID"
 ```
 
 Download and split into one file per chapter:
 
 ```bash
-./yt-download.sh --chapters "https://www.youtube.com/watch?v=VIDEO_ID"
+./yt_download.py --chapters "https://www.youtube.com/watch?v=VIDEO_ID"
 ```
 
 Split into frame-exact chapters and keep only the chapter files:
 
 ```bash
-./yt-download.sh --chapters --precise --segments-only "https://www.youtube.com/watch?v=VIDEO_ID"
+./yt_download.py --chapters --precise --segments-only "https://www.youtube.com/watch?v=VIDEO_ID"
 ```
 
 Split a video you downloaded earlier, using that video's chapters:
 
 ```bash
-./yt-download.sh --split-file ~/Videos/"My Talk [VIDEO_ID].mp4" "https://www.youtube.com/watch?v=VIDEO_ID"
+./yt_download.py --split-file ~/Videos/"My Talk [VIDEO_ID].mp4" "https://www.youtube.com/watch?v=VIDEO_ID"
 ```
 
 Download several videos, one after another:
 
 ```bash
-./yt-download.sh -o ~/Videos "https://www.youtube.com/watch?v=FIRST" "https://www.youtube.com/watch?v=SECOND"
+./yt_download.py -o ~/Videos "https://www.youtube.com/watch?v=FIRST" "https://www.youtube.com/watch?v=SECOND"
 ```
 
 Download every video in a playlist:
 
 ```bash
-./yt-download.sh -o ~/Videos "https://www.youtube.com/playlist?list=PLAYLIST_ID"
+./yt_download.py -o ~/Videos "https://www.youtube.com/playlist?list=PLAYLIST_ID"
 ```
 
 Work through a list of URLs kept in a file, skipping any already downloaded:
 
 ```bash
-./yt-download.sh -o ~/Videos --skip-existing --batch-file urls.txt
+./yt_download.py -o ~/Videos --skip-existing --batch-file urls.txt
 ```
 
 Update yt-dlp (do this first if downloads fail with HTTP 403):
 
 ```bash
-./yt-download.sh --update
+./yt_download.py --update
 ```
 
 ### Several videos at once
@@ -231,13 +232,14 @@ YouTube only serves H.264 video up to 1080p. Higher resolutions use VP9 or AV1, 
 
 ### Troubleshooting
 
-- **HTTP 403: Forbidden:** your yt-dlp is out of date or YouTube has blocked it. Run `./yt-download.sh --update` and try again. The script warns you when yt-dlp is more than 30 days old.
+- **HTTP 403: Forbidden:** your yt-dlp is out of date or YouTube has blocked it. Run `./yt_download.py --update` and try again. The script warns you when yt-dlp is more than 30 days old.
 - **"not enough free disk space":** the script needs room for about twice the download size, because merging the streams briefly makes a second copy. Free up space, or pass `--skip-space-check` if you know the estimate is wrong.
 
 | Exit code | Meaning |
 | --- | --- |
 | `0` | Success |
-| `1` | Bad arguments, a missing dependency, no chapters found, yt-dlp too old under `--strict`, or at least one video in a batch failed |
+| `1` | A missing dependency, no chapters found, yt-dlp too old under `--strict`, or at least one video in a batch failed |
+| `2` | Bad arguments (the usual Python convention; the old shell version used `1`) |
 | `3` | HTTP 403 during download (with `--strict`) |
 | `4` | Not enough free disk space |
 
@@ -314,13 +316,13 @@ The crossfade has to be shorter than the shortest clip.
 
 ## video_tools_gui.py
 
-A desktop window for `clip_video.py`, `yt-download.sh` and `mix_videos.py`. It has a tab for each tool, builds the same command you would type in the terminal, and shows the output as it runs.
+A desktop window for `clip_video.py`, `yt_download.py` and `mix_videos.py`. It has a tab for each tool, builds the same command you would type in the terminal, and shows the output as it runs.
 
 ### Requirements
 
 - Python 3.8+ with tkinter (included with the python.org and Homebrew Python installs)
 - The same tools the scripts need: ffmpeg, and yt-dlp for YouTube
-- On Windows, [Git for Windows](https://git-scm.com/download/win) for the Download tab, which runs `yt-download.sh` in Git Bash. WSL's `bash.exe` is deliberately skipped: it runs in the Linux VM, which cannot open your `C:\` folders or use the ffmpeg and yt-dlp the app installs on the Windows side. The Clip and Mix tabs are pure Python and need no bash.
+- Nothing else: all three tabs are pure Python, on Windows as much as on macOS and Linux.
 
 ### Usage
 
@@ -331,7 +333,7 @@ python3 video_tools_gui.py
 | Tab | Tool | What you can set |
 | --- | --- | --- |
 | Clip | `clip_video.py` | Source file or URL, start and end times, output folder, file name, fast cut |
-| Download | `yt-download.sh` | URLs (one per line, downloaded one after another), output folder, MP4 or MKV, max resolution, chapter splitting, playlist expansion, skipping videos already downloaded, splitting an existing file. Also has buttons to list formats and update yt-dlp |
+| Download | `yt_download.py` | URLs (one per line, downloaded one after another), output folder, MP4 or MKV, max resolution, chapter splitting, playlist expansion, skipping videos already downloaded, splitting an existing file. Also has buttons to list formats and update yt-dlp |
 | Mix | `mix_videos.py` | Videos in order, mode, crossfade and transition, grid columns, blend weights, output size, frame rate, quality and speed |
 
 All tabs share one log pane and a progress bar at the bottom of the window.
