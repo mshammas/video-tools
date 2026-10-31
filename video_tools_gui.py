@@ -12,6 +12,9 @@ streaming the output into the log pane. Only the Python standard library is
 needed (tkinter). The underlying tools need ffmpeg / yt-dlp, which the commands
 auto-install when missing (see deps.py); the output streams into the log.
 
+The Help menu checks GitHub Releases for a newer version (see updates.py); the
+daily automatic check can be switched off there.
+
 Runs on macOS, Linux and Windows. The Download tab shells out to yt-download.sh,
 so on Windows it needs bash (WSL or Git Bash); the other tabs are pure Python.
 
@@ -27,6 +30,8 @@ import signal
 import subprocess
 import sys
 import threading
+import time
+import webbrowser
 from pathlib import Path
 
 # When frozen by PyInstaller, bundled files live in sys._MEIPASS and sys.executable
@@ -78,6 +83,7 @@ import appinfo  # noqa: E402
 import clip_video  # noqa: E402
 import deps  # noqa: E402  (importing it also puts the managed tool-bin dir on PATH)
 import mix_videos  # noqa: E402
+import updates  # noqa: E402
 
 ICON_PNG = HERE / "assets" / "icon.png"
 
@@ -871,6 +877,9 @@ class App(tk.Tk):
         except Exception:
             pass
 
+        self._update_settings = updates.load_settings()
+        self._update_busy = False
+
         paned = ttk.PanedWindow(self, orient="vertical")
         paned.pack(fill="both", expand=True, padx=8, pady=8)
         notebook = ttk.Notebook(paned)
@@ -912,6 +921,143 @@ class App(tk.Tk):
         paned.add(bottom, weight=2)
 
         self.protocol("WM_DELETE_WINDOW", self.on_close)
+
+        self.build_menu()
+        # Let the window draw first; the check itself runs off the UI thread.
+        self.after(1200, self.auto_check_updates)
+
+    # ------------------------------------------------------------- updates --
+    def build_menu(self):
+        """Menu bar holding the update controls and About (which shows the version)."""
+        self.auto_update = tk.BooleanVar(value=self._update_settings.get("auto_check", True))
+        menubar = tk.Menu(self)
+
+        if sys.platform == "darwin":
+            # On macOS the menu named "apple" IS the application menu, which is
+            # where About and Check for Updates belong.
+            app_menu = tk.Menu(menubar, name="apple")
+            menubar.add_cascade(menu=app_menu)
+            app_menu.add_command(label=f"About {appinfo.APP_NAME}", command=self.show_about)
+            app_menu.add_separator()
+            app_menu.add_command(label="Check for Updates\u2026", command=self.check_for_updates)
+
+        help_menu = tk.Menu(menubar, tearoff=0)
+        help_menu.add_command(label="Check for Updates\u2026", command=self.check_for_updates)
+        help_menu.add_checkbutton(label="Check for updates automatically",
+                                  variable=self.auto_update, command=self.toggle_auto_update)
+        help_menu.add_separator()
+        help_menu.add_command(label="Release notes",
+                              command=lambda: webbrowser.open(updates.RELEASES_PAGE))
+        if sys.platform != "darwin":
+            help_menu.add_command(label=f"About {appinfo.APP_NAME}", command=self.show_about)
+        menubar.add_cascade(label="Help", menu=help_menu)
+
+        self.configure(menu=menubar)
+
+    def toggle_auto_update(self):
+        on = bool(self.auto_update.get())
+        self._update_settings = updates.save_settings(auto_check=on)
+        self.runner.note("Automatic update checks are %s." % ("on" if on else "off"))
+
+    def show_about(self):
+        messagebox.showinfo(
+            f"About {appinfo.APP_NAME}",
+            f"{appinfo.APP_NAME} {appinfo.APP_VERSION}\n\n"
+            f"{appinfo.APP_DESCRIPTION}\n\n{appinfo.APP_WEBSITE}",
+        )
+
+    def check_for_updates(self):
+        """Menu command: always report the outcome, 'up to date' included."""
+        if self._update_busy:
+            return
+        self._update_busy = True
+        self.runner.note(f"Checking for updates (this is version {appinfo.APP_VERSION})\u2026")
+        updates.check_in_background(
+            lambda release, error: self.after(0, self.on_update_result, release, error, False))
+
+    def auto_check_updates(self):
+        """Startup check: at most once a day, and silent unless there is news."""
+        if not updates.auto_check_due(self._update_settings):
+            return
+        self._update_settings = updates.save_settings(last_check=time.time())
+        updates.check_in_background(
+            lambda release, error: self.after(0, self.on_update_result, release, error, True))
+
+    def on_update_result(self, release, error, silent):
+        """Back on the UI thread with the result of a check."""
+        self._update_busy = False
+        if error:
+            self.runner.note(f"Update check: {error}")
+            if not silent:
+                messagebox.showwarning("Check for Updates", error)
+            return
+        if not release.is_update:
+            self.runner.note(f"Up to date \u2014 {release.version} is the latest release.")
+            if not silent:
+                messagebox.showinfo(
+                    "Check for Updates",
+                    f"{appinfo.APP_NAME} {appinfo.APP_VERSION} is the latest version.")
+            return
+        if silent and updates.is_skipped(release.version, self._update_settings):
+            return
+        self.offer_update(release, silent)
+
+    def offer_update(self, release, silent):
+        """Show what's new and let the user download it, skip it, or wait."""
+        self.runner.note(f"Version {release.version} is available "
+                         f"(you have {appinfo.APP_VERSION}).")
+        win = tk.Toplevel(self)
+        win.title("Update Available")
+        win.transient(self)
+        frame = ttk.Frame(win, padding=16)
+        frame.pack(fill="both", expand=True)
+
+        ttk.Label(frame, text=f"{appinfo.APP_NAME} {release.version} is available.",
+                  font=("TkDefaultFont", 13, "bold")).pack(anchor="w")
+        subtitle = f"You have {appinfo.APP_VERSION}."
+        if release.published:
+            subtitle += f"   Released {release.published}."
+        ttk.Label(frame, text=subtitle).pack(anchor="w", pady=(2, 10))
+
+        if release.notes:
+            ttk.Label(frame, text="What's new").pack(anchor="w")
+            notes_frame = ttk.Frame(frame)
+            notes_frame.pack(fill="both", expand=True, pady=(2, 12))
+            notes = tk.Text(notes_frame, width=62, height=10, wrap="word")
+            notes_scroll = ttk.Scrollbar(notes_frame, orient="vertical", command=notes.yview)
+            notes.configure(yscrollcommand=notes_scroll.set)
+            notes.insert("1.0", release.notes)
+            notes.configure(state="disabled")
+            notes.pack(side="left", fill="both", expand=True)
+            notes_scroll.pack(side="right", fill="y")
+
+        ttk.Label(frame, wraplength=440, foreground="#666666",
+                  text="Download opens the installer for this platform in your browser. "
+                       "Install it over this copy to update.").pack(anchor="w", pady=(0, 12))
+
+        buttons = ttk.Frame(frame)
+        buttons.pack(fill="x")
+
+        def download():
+            webbrowser.open(release.download_url())
+            self.runner.note(f"Opened the download for version {release.version}.")
+            win.destroy()
+
+        def skip():
+            self._update_settings = updates.save_settings(skipped_version=release.version)
+            self.runner.note(f"Skipping version {release.version}.")
+            win.destroy()
+
+        ttk.Button(buttons, text="Download", command=download).pack(side="right")
+        ttk.Button(buttons, text="Later", command=win.destroy).pack(side="right", padx=6)
+        if silent:   # only the unprompted check offers to stop mentioning this version
+            ttk.Button(buttons, text="Skip This Version", command=skip).pack(side="left")
+
+        win.bind("<Escape>", lambda _event: win.destroy())
+        win.update_idletasks()
+        x = self.winfo_rootx() + max((self.winfo_width() - win.winfo_width()) // 2, 0)
+        win.geometry(f"+{max(x, 0)}+{max(self.winfo_rooty() + 80, 0)}")
+        win.grab_set()
 
     def on_close(self):
         if self.runner.busy:

@@ -27,7 +27,8 @@ import appinfo  # noqa: E402
 
 SYSTEM = platform.system()           # 'Darwin', 'Linux' or 'Windows'
 DIST = ROOT / "dist"
-BUNDLED = ["clip_video.py", "mix_videos.py", "deps.py", "appinfo.py", "yt-download.sh"]
+BUNDLED = ["clip_video.py", "mix_videos.py", "deps.py", "appinfo.py", "updates.py",
+           "yt-download.sh"]
 
 
 def run(cmd, **kw):

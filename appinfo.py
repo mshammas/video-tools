@@ -11,7 +11,8 @@ APP_VERSION = "1.0.3"
 APP_IDENTIFIER = "com.shammas.videotools"    # macOS bundle id / general app id
 APP_AUTHOR = "Shammas"
 APP_DESCRIPTION = "Clip, download and mix videos."
-APP_WEBSITE = ""                             # fill in once hosted
+APP_REPO = "mshammas/video-tools"            # GitHub owner/name, used for update checks
+APP_WEBSITE = f"https://github.com/{APP_REPO}"
 
 # Windows version-info wants a 4-part tuple.
 def version_tuple():

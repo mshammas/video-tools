@@ -339,3 +339,26 @@ All tabs share one log pane and a progress bar at the bottom of the window.
 - **Show command** (Mix tab) prints the command without running it.
 
 Inputs are checked before anything runs, so mistakes like a bad time, a missing file or a crossfade longer than a clip are reported straight away. Only one job runs at a time.
+
+### Updates
+
+The **Help** menu (on macOS, also the **Video Tools** application menu) carries the update controls:
+
+| Item | What it does |
+| --- | --- |
+| Check for Updates… | Asks GitHub for the latest release now and reports the result either way |
+| Check for updates automatically | Toggles the background check. On by default; the setting is remembered |
+| Release notes | Opens the latest release page |
+| About Video Tools | Shows the version you are running |
+
+With the automatic check on, the app asks GitHub once a day, shortly after it starts. It stays quiet unless there is a newer version, and then offers **Download**, **Later** or **Skip This Version** — the last one suppresses that one version only, so the next release is still announced.
+
+**Download** opens the installer for your platform (the `.dmg`, `.zip` or `.tar.gz` from the release); install it over the existing copy. The app does not replace itself in place.
+
+The check only reads the public releases API, so it sends nothing about you. It is also available from the terminal:
+
+```bash
+python3 updates.py
+```
+
+The preference lives in `settings.json` next to the managed tool binaries — `~/Library/Application Support/VideoTools/` on macOS, `%LOCALAPPDATA%\VideoTools\` on Windows, `~/.config/video-tools/` on Linux.
