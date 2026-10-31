@@ -42,9 +42,14 @@ to GitHub.
    add a first-run auto-download. *(Not yet done — ask to add it.)*
 2. **Code signing / notarization.** The macOS `.app` is only ad-hoc signed and
    the Windows `.exe` is unsigned, so Gatekeeper / SmartScreen will warn users.
-   On macOS 15+ there is no right-click → Open bypass: the user clears it with
-   `xattr -dr com.apple.quarantine <app>`, or **Open Anyway** in System Settings
-   → Privacy & Security. Shipping without warnings needs an Apple Developer ID
+   On macOS 15+ there is no right-click → Open bypass. Note that clearing the
+   flag on the *installed* app does not work: since macOS 13, App Management
+   protects bundles in `/Applications`, so `xattr -dr com.apple.quarantine
+   "/Applications/Video Tools.app"` fails with `Operation not permitted` on
+   every file, `sudo` included. The user clears it on the download instead —
+   `xattr -d com.apple.quarantine ~/Downloads/video-tools-*-macos.dmg` before
+   dragging the app across — or uses **Open Anyway** in System Settings →
+   Privacy & Security. Shipping without warnings needs an Apple Developer ID
    (notarization) and a Windows code-signing certificate.
 3. **Download tab needs bash on Windows.** `yt-download.sh` is a bash script;
    the Download tab requires WSL or Git Bash on Windows. The Clip and Mix tabs
