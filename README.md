@@ -1,7 +1,7 @@
 # tools
 
 - [clip_video.py](#clip_videopy): clip a segment out of a local video or a YouTube video
-- [yt-download.sh](#yt-downloadsh): download a whole YouTube video in the best quality, optionally split into chapters
+- [yt-download.sh](#yt-downloadsh): download whole YouTube videos in the best quality — one, a list of them, or a playlist — optionally split into chapters
 - [mix_videos.py](#mix_videospy): join videos one after another (with optional crossfades), in a grid, or blended together
 - [video_tools_gui.py](#video_tools_guipy): a desktop window for all three tools
 
@@ -97,7 +97,7 @@ Video is stored as keyframes with partial frames in between, and a clip can only
 
 ## yt-download.sh
 
-Download a YouTube video in its highest available resolution. It can also split the video into one file per chapter.
+Download YouTube videos in their highest available resolution. It takes one URL or many, expands a playlist into the videos it contains, and can split each video into one file per chapter.
 
 ### Requirements
 
@@ -107,7 +107,7 @@ Download a YouTube video in its highest available resolution. It can also split 
 ### Usage
 
 ```
-./yt-download.sh [options] <youtube-url>
+./yt-download.sh [options] <youtube-url> [<youtube-url> ...]
 ```
 
 Files are saved as `<title> [<video id>].<ext>`. Run `./yt-download.sh --help` for the full option list.
@@ -125,6 +125,11 @@ Files are saved as `<title> [<video id>].<ext>`. Run `./yt-download.sh --help` f
 | `--segments-only` | With `--chapters`, delete the full-length video after splitting |
 | `--split-file PATH` | Split a file you already have into chapters, using the chapter list from the URL. Nothing is downloaded |
 | `--skip-space-check` | Skip the free-disk-space check before downloading |
+| `-b`, `--batch-file PATH` | Read URLs from a file, one per line (blank lines and `#` comments ignored) |
+| `--skip-existing` | Leave a video alone if its output file is already there |
+| `--stop-on-error` | Abort the batch on the first failure instead of carrying on |
+| `--no-playlist-expand` | Never expand a playlist; download only the single video a link points at |
+| `--yes-playlist` | Expand the playlist even for a `watch?v=...&list=...` link |
 | `-F`, `--list-formats` | List the available formats and exit |
 | `-u`, `--update` | Update the yt-dlp on your PATH and exit |
 | `-s`, `--strict` | Refuse to run if yt-dlp is more than 30 days old, and explain HTTP 403 errors clearly |
@@ -174,11 +179,39 @@ Split a video you downloaded earlier, using that video's chapters:
 ./yt-download.sh --split-file ~/Videos/"My Talk [VIDEO_ID].mp4" "https://www.youtube.com/watch?v=VIDEO_ID"
 ```
 
+Download several videos, one after another:
+
+```bash
+./yt-download.sh -o ~/Videos "https://www.youtube.com/watch?v=FIRST" "https://www.youtube.com/watch?v=SECOND"
+```
+
+Download every video in a playlist:
+
+```bash
+./yt-download.sh -o ~/Videos "https://www.youtube.com/playlist?list=PLAYLIST_ID"
+```
+
+Work through a list of URLs kept in a file, skipping any already downloaded:
+
+```bash
+./yt-download.sh -o ~/Videos --skip-existing --batch-file urls.txt
+```
+
 Update yt-dlp (do this first if downloads fail with HTTP 403):
 
 ```bash
 ./yt-download.sh --update
 ```
+
+### Several videos at once
+
+Give it more than one URL, a `--batch-file`, or a playlist, and the videos download one after another — one at a time, since each merge is already CPU-hungry.
+
+A playlist or channel-tab URL (`.../playlist?list=...`, `.../@someone/videos`) is expanded into its videos before anything downloads, so every option above still applies to each one. A `.../watch?v=...&list=...` link — what you get by copying the address while watching a video from a playlist — downloads just that one video; pass `--yes-playlist` for the whole list. `--no-playlist-expand` turns expansion off entirely. A bare channel URL isn't expanded, because yt-dlp lists a channel's *tabs* rather than its videos: point it at the `/videos` tab instead.
+
+One failure doesn't stop the rest. The run ends with a summary of what succeeded and what didn't, and exits non-zero if anything failed; `--stop-on-error` bails out at the first failure instead. `--skip-existing` leaves videos already in the output folder alone, which makes re-running a batch after a failure cheap.
+
+A single URL behaves exactly as it always did, including its exit code.
 
 ### Chapters
 
@@ -203,7 +236,7 @@ YouTube only serves H.264 video up to 1080p. Higher resolutions use VP9 or AV1, 
 | Exit code | Meaning |
 | --- | --- |
 | `0` | Success |
-| `1` | Bad arguments, a missing dependency, no chapters found, or yt-dlp too old under `--strict` |
+| `1` | Bad arguments, a missing dependency, no chapters found, yt-dlp too old under `--strict`, or at least one video in a batch failed |
 | `3` | HTTP 403 during download (with `--strict`) |
 | `4` | Not enough free disk space |
 
@@ -296,7 +329,7 @@ python3 video_tools_gui.py
 | Tab | Tool | What you can set |
 | --- | --- | --- |
 | Clip | `clip_video.py` | Source file or URL, start and end times, output folder, file name, fast cut |
-| Download | `yt-download.sh` | URL, output folder, MP4 or MKV, max resolution, chapter splitting, splitting an existing file. Also has buttons to list formats and update yt-dlp |
+| Download | `yt-download.sh` | URLs (one per line, downloaded one after another), output folder, MP4 or MKV, max resolution, chapter splitting, playlist expansion, skipping videos already downloaded, splitting an existing file. Also has buttons to list formats and update yt-dlp |
 | Mix | `mix_videos.py` | Videos in order, mode, crossfade and transition, grid columns, blend weights, output size, frame rate, quality and speed |
 
 All tabs share one log pane and a progress bar at the bottom of the window.

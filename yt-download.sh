@@ -3,7 +3,10 @@
 # yt-download.sh — download a YouTube video in its highest available resolution.
 #
 # Usage:
-#   ./yt-download.sh [options] <youtube-url>
+#   ./yt-download.sh [options] <youtube-url> [<youtube-url> ...]
+#
+# Several URLs (or --batch-file) download one after another, and a playlist URL
+# expands into the videos it contains. See the batch options below.
 #
 # Options:
 #   -o, --outdir DIR      Output directory (default: current directory)
@@ -41,6 +44,21 @@
 #       --skip-space-check Skip the pre-download free-space check (which, by
 #                         default, refuses to start if the destination disk
 #                         likely lacks room for the download plus its merge).
+#   -b, --batch-file PATH Read URLs from PATH, one per line; blank lines and
+#                         lines starting with '#' are ignored. Combines with any
+#                         URLs given on the command line.
+#       --skip-existing   Leave a video alone when its output file is already
+#                         there, instead of downloading it again. Makes
+#                         re-running a batch after a failure cheap.
+#       --stop-on-error   Abort the batch as soon as one video fails. The
+#                         default is to carry on and list the failures at the
+#                         end.
+#       --no-playlist-expand
+#                         Never expand a playlist URL; download only the single
+#                         video the link points at.
+#       --yes-playlist    Expand the playlist even when the URL also names one
+#                         specific video (a '...watch?v=...&list=...' link,
+#                         which by default downloads just that one video).
 #   -F, --list-formats    List all available formats and exit (no download)
 #   -u, --update          Update yt-dlp (the copy on your PATH) and exit
 #   -s, --strict          Fail hard on yt-dlp problems instead of muddling on:
@@ -66,6 +84,11 @@
 #     highest resolution (4K/1440p are served only as VP9/AV1, which live in MKV).
 #   * The merge/remux step temporarily needs disk space for a second full copy
 #     of the file, but the pre-download space check now guards against this.
+#   * Batch mode: give it several URLs, a playlist, or --batch-file, and the
+#     videos download one after another. Playlists are expanded up front, so
+#     every item is a single video and all the options above still apply to it.
+#     One failure doesn't stop the rest; the run ends with a summary and exits
+#     non-zero if anything failed. Use --stop-on-error to bail out on the first.
 
 set -euo pipefail
 
@@ -83,7 +106,12 @@ SEGMENTS_ONLY=0
 SPLIT_FILE=""
 SKIP_SPACE_CHECK=0
 NO_INSTALL=0
-URL=""
+URLS=()
+BATCH_FILE=""
+SKIP_EXISTING=0
+STOP_ON_ERROR=0
+EXPAND_PLAYLIST=1
+YES_PLAYLIST=0
 
 # Multiplier over the estimated download size that must be free on the
 # destination disk: the merge (and, for --mp4, the remux; for --chapters, the
@@ -111,26 +139,54 @@ while [[ $# -gt 0 ]]; do
     --segments-only)   SEGMENTS_ONLY=1; shift ;;
     --split-file)      SPLIT_FILE="$2"; shift 2 ;;
     --skip-space-check) SKIP_SPACE_CHECK=1; shift ;;
+    -b|--batch-file)   BATCH_FILE="$2"; shift 2 ;;
+    --skip-existing)   SKIP_EXISTING=1; shift ;;
+    --stop-on-error)   STOP_ON_ERROR=1; shift ;;
+    --no-playlist-expand) EXPAND_PLAYLIST=0; shift ;;
+    --yes-playlist)    YES_PLAYLIST=1; shift ;;
     --no-install)      NO_INSTALL=1; shift ;;
     -F|--list-formats) LIST_ONLY=1; shift ;;
     -u|--update)       DO_UPDATE=1; shift ;;
     -s|--strict)       STRICT=1; shift ;;
     -h|--help)         usage 0 ;;
     -*)                echo "Unknown option: $1" >&2; usage 1 ;;
-    *)                 URL="$1"; shift ;;
+    *)                 URLS+=("$1"); shift ;;
   esac
 done
 
+# --batch-file: read URLs one per line, ignoring blank lines and '#' comments.
+# They join any URLs given on the command line, in file order.
+if [[ -n "$BATCH_FILE" ]]; then
+  if [[ ! -f "$BATCH_FILE" ]]; then
+    echo "Error: --batch-file: no such file: $BATCH_FILE" >&2
+    exit 1
+  fi
+  # The `|| [[ -n "$line" ]]` keeps a last line that has no trailing newline.
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    line="${line%$'\r'}"                        # tolerate CRLF files
+    line="${line#"${line%%[![:space:]]*}"}"     # trim leading whitespace
+    line="${line%"${line##*[![:space:]]}"}"     # trim trailing whitespace
+    [[ -z "$line" || "$line" == \#* ]] && continue
+    URLS+=("$line")
+  done < "$BATCH_FILE"
+fi
+
 # A URL is required for everything except --update.
-if [[ -z "$URL" && "$DO_UPDATE" -eq 0 ]]; then
+if [[ ${#URLS[@]} -eq 0 && "$DO_UPDATE" -eq 0 ]]; then
   echo "Error: no YouTube URL given." >&2
   usage 1
 fi
 
 # --split-file splits an existing local file instead of downloading. It still
-# needs the URL as the chapter source, and implies chapters mode.
+# needs the URL as the chapter source, and implies chapters mode. One file means
+# one chapter source, so exactly one URL.
 if [[ -n "$SPLIT_FILE" ]]; then
   CHAPTERS=1
+  if [[ ${#URLS[@]} -ne 1 ]]; then
+    echo "Error: --split-file splits one file, so it takes exactly one URL" >&2
+    echo "       (the video whose chapters mark the split points)." >&2
+    exit 1
+  fi
   if [[ ! -f "$SPLIT_FILE" ]]; then
     echo "Error: --split-file: no such file: $SPLIT_FILE" >&2
     exit 1
@@ -234,11 +290,23 @@ if [[ "$SEGMENTS_ONLY" -eq 1 && "$CHAPTERS" -eq 0 ]]; then
 fi
 
 # Temp-file bookkeeping: track everything we create and clean it up on exit.
+# TMPFILES lasts for the whole run; ITEM_TMPFILES holds one video's scratch
+# files and is emptied after each URL, so a long batch doesn't pile them up.
 TMPFILES=()
-# Must return 0: as an EXIT trap, a non-zero return here would become the
+ITEM_TMPFILES=()
+# Both must return 0: as an EXIT trap, a non-zero return here would become the
 # script's exit status when it falls off the end (e.g. plain downloads, where
 # TMPFILES is empty and the guard would otherwise return 1).
-cleanup() { [[ ${#TMPFILES[@]} -gt 0 ]] && rm -f "${TMPFILES[@]}"; return 0; }
+cleanup_item() {
+  [[ ${#ITEM_TMPFILES[@]} -gt 0 ]] && rm -f "${ITEM_TMPFILES[@]}"
+  ITEM_TMPFILES=()
+  return 0
+}
+cleanup() {
+  cleanup_item
+  [[ ${#TMPFILES[@]} -gt 0 ]] && rm -f "${TMPFILES[@]}"
+  return 0
+}
 trap cleanup EXIT
 
 # --update: update the yt-dlp on PATH, then exit. Installs vary (pip, Homebrew,
@@ -304,20 +372,26 @@ check_ytdlp_freshness() {
 }
 check_ytdlp_freshness
 
-# --list-formats: show what's available, then exit.
+# --list-formats: show what's available for each URL, then exit.
 if [[ "$LIST_ONLY" -eq 1 ]]; then
-  yt-dlp -F --no-playlist "$URL"
+  for url in "${URLS[@]}"; do
+    if [[ ${#URLS[@]} -gt 1 ]]; then
+      echo >&2
+      echo "=== $url" >&2
+    fi
+    yt-dlp -F --no-playlist "$url"
+  done
   exit 0
 fi
 
 mkdir -p "$OUTDIR"
 
-# --chapters: fetch video info up front and derive a chapter list, so we can
-# fail fast (before downloading) if there is nothing to split. The result is a
-# TSV of "start<TAB>end<TAB>title" lines written to CHAPTERS_TSV.
+# --chapters: a Python helper turns one video's info into a chapter list —
+# preferring native chapters, otherwise timestamps parsed out of the
+# description. It is written once here and reused for every URL in the batch.
 CHAPTERS_TSV=""
+pyhelper=""
 if [[ "$CHAPTERS" -eq 1 ]]; then
-  # Python helper: prefer native chapters; otherwise parse description timestamps.
   pyhelper="$(mktemp -t yt-chapters-py.XXXXXX)"; TMPFILES+=("$pyhelper")
   cat > "$pyhelper" <<'PYEOF'
 import json, re, sys
@@ -377,24 +451,30 @@ for i, (s, en, t) in enumerate(result):
         continue
     sys.stdout.write("%.3f\t%.3f\t%s\n" % (s, en, sanitize(t)))
 PYEOF
+fi
 
+# Derive one URL's chapter list into a fresh CHAPTERS_TSV, before anything is
+# downloaded, so a video with nothing to split fails fast. Returns 1 in that
+# case (and when the info can't be fetched) so a batch can skip to the next URL.
+build_chapters_tsv() {
+  local url="$1" nch
   echo "Fetching video info to locate chapters..." >&2
-  CHAPTERS_TSV="$(mktemp -t yt-chapters.XXXXXX)"; TMPFILES+=("$CHAPTERS_TSV")
-  if ! yt-dlp -J --no-playlist "$URL" 2>/dev/null | python3 "$pyhelper" > "$CHAPTERS_TSV"; then
+  CHAPTERS_TSV="$(mktemp -t yt-chapters.XXXXXX)"; ITEM_TMPFILES+=("$CHAPTERS_TSV")
+  if ! yt-dlp -J --no-playlist "$url" 2>/dev/null | python3 "$pyhelper" > "$CHAPTERS_TSV"; then
     echo "Error: could not fetch or parse video info for chapters." >&2
-    exit 1
+    return 1
   fi
   if [[ ! -s "$CHAPTERS_TSV" ]]; then
     echo "Error: no chapters found — the video has no native chapters and no" >&2
     echo "       usable timestamps were parsed from its description. Nothing to" >&2
     echo "       split. Re-run without --chapters to download the whole video." >&2
-    exit 1
+    return 1
   fi
   nch=$(wc -l < "$CHAPTERS_TSV" | tr -d ' ')
   echo "Found $nch chapter(s):" >&2
   nl -w2 -s'. ' <(cut -f3 "$CHAPTERS_TSV") >&2
   echo >&2
-fi
+}
 
 # Build the format selector.
 #
@@ -422,8 +502,10 @@ else
   FORMAT="${VONLY}${HFILTER}+${AONLY}/b${HFILTER}"
 fi
 
-# Assemble yt-dlp arguments.
-ARGS=(
+# Assemble the yt-dlp arguments every URL in the batch shares. --no-playlist
+# keeps each item one video: playlist links are expanded into their videos up
+# front (see expand_urls), so everything downstream handles a single video.
+BASE_ARGS=(
   --format "$FORMAT"
   --output "$OUTDIR/%(title)s [%(id)s].%(ext)s"
   --embed-metadata
@@ -433,27 +515,25 @@ ARGS=(
 
 # Keep intermediate files (separate streams and the pre-remux merge) if asked.
 if [[ "$KEEP" -eq 1 ]]; then
-  ARGS+=(--keep-video)
+  BASE_ARGS+=(--keep-video)
 fi
 
-# In chapters mode, capture the final output path so we know what to split.
-PATHFILE=""
-if [[ "$CHAPTERS" -eq 1 ]]; then
-  PATHFILE="$(mktemp -t yt-download-path.XXXXXX)"; TMPFILES+=("$PATHFILE")
-  ARGS+=(--print-to-file "after_move:filepath" "$PATHFILE")
+# --skip-existing: leave a video alone when its output file is already there.
+if [[ "$SKIP_EXISTING" -eq 1 ]]; then
+  BASE_ARGS+=(--no-overwrites)
 fi
 
 if [[ "$REMUX_MP4" -eq 1 ]]; then
   # Merge to MKV (accepts any codec, always succeeds), then remux to MP4
   # without re-encoding. +faststart moves the index to the front so the file
   # streams/seeks smoothly (QuickTime, AirPlay, web).
-  ARGS+=(
+  BASE_ARGS+=(
     --merge-output-format mkv
     --remux-video mp4
     --postprocessor-args "VideoRemuxer:-movflags +faststart"
   )
 else
-  ARGS+=(--merge-output-format "$CONTAINER")
+  BASE_ARGS+=(--merge-output-format "$CONTAINER")
 fi
 
 # Run the download. Without --strict, let yt-dlp's own exit status and error
@@ -462,12 +542,12 @@ fi
 # into a clearly-diagnosed failure pointing at the fix, rather than leaving the
 # raw traceback as the last word. Returns yt-dlp's status, or 3 for a strict 403.
 run_download() {
-  local st
+  local url="$1" st
   if (( STRICT )); then
     local log; log="$(mktemp -t yt-download.XXXXXX)"; TMPFILES+=("$log")
     # tee keeps yt-dlp's output live on screen while we also capture it to scan.
     set +e
-    yt-dlp "${ARGS[@]}" "$URL" 2>&1 | tee "$log"
+    yt-dlp "${ARGS[@]}" "$url" 2>&1 | tee "$log"
     st=${PIPESTATUS[0]}
     set -e
     if (( st != 0 )) && grep -qiE "HTTP Error 403|403: Forbidden|Forbidden" "$log"; then
@@ -485,7 +565,7 @@ run_download() {
     return "$st"
   else
     set +e
-    yt-dlp "${ARGS[@]}" "$URL"
+    yt-dlp "${ARGS[@]}" "$url"
     st=$?
     set -e
     return "$st"
@@ -554,6 +634,7 @@ split_into_chapters() {
 
 # --split-file: no download; split the existing file using chapters from the URL.
 if [[ -n "$SPLIT_FILE" ]]; then
+  build_chapters_tsv "${URLS[0]}" || exit 1
   split_into_chapters
   exit 0
 fi
@@ -567,9 +648,9 @@ human() {
     while (b >= 1024 && i < 6) { b/=1024; i++ } printf "%.1f %s", b, u[i] }'
 }
 check_disk_space() {
-  local est need avail_kb avail
+  local url="$1" est need avail_kb avail
   est="$(yt-dlp -f "$FORMAT" --no-playlist --simulate \
-        --print "%(filesize,filesize_approx)s" "$URL" 2>/dev/null | head -n1)"
+        --print "%(filesize,filesize_approx)s" "$url" 2>/dev/null | head -n1)"
   if ! [[ "$est" =~ ^[0-9]+$ ]] || (( est <= 0 )); then
     echo "Note: could not estimate download size; skipping disk-space check." >&2
     return 0
@@ -587,19 +668,171 @@ check_disk_space() {
       echo "       Free on $(cd "$OUTDIR" && pwd -P): ~$(human "$avail")"
       echo "       Free up space, or pass --skip-space-check to override."
     } >&2
-    exit 4
+    return 4
   fi
 }
-if (( ! SKIP_SPACE_CHECK )); then
-  check_disk_space
+
+# ---------------------------------------------------------------------------
+# Playlist expansion. A playlist link is replaced by the videos it contains, so
+# every item in the batch is a single video and the per-video machinery
+# (chapters, space check, output-path capture) keeps working untouched.
+# ---------------------------------------------------------------------------
+
+# Links worth expanding: a playlist, or a channel tab that lists videos. A bare
+# channel URL is not one — yt-dlp lists its *tabs*, not its videos — so point it
+# at the /videos tab instead.
+looks_like_playlist() {
+  case "$1" in
+    *"/playlist"*|*"list="*)       return 0 ;;
+    *"/videos"|*"/videos/"|*"/videos?"*) return 0 ;;
+    *"/shorts"|*"/shorts/"|*"/shorts?"*) return 0 ;;
+    *"/streams"|*"/streams/"|*"/streams?"*) return 0 ;;
+  esac
+  return 1
+}
+
+expand_urls() {
+  local url tmp line entry vid n out=()
+  if (( ! EXPAND_PLAYLIST )); then
+    return 0
+  fi
+  for url in "${URLS[@]}"; do
+    if ! looks_like_playlist "$url"; then
+      out+=("$url"); continue
+    fi
+    # A '...watch?v=...&list=...' link names one video inside a playlist, which
+    # is what you get when you copy the address while watching it. Downloading
+    # just that video is almost always what was meant.
+    if [[ "$url" == *"v="* ]] && (( ! YES_PLAYLIST )); then
+      echo "Note: this link names one video inside a playlist, so only that" >&2
+      echo "      video will be downloaded. Pass --yes-playlist (or use the" >&2
+      echo "      playlist's own URL) to get every video in it." >&2
+      out+=("$url"); continue
+    fi
+    echo "Expanding playlist: $url" >&2
+    tmp="$(mktemp -t yt-playlist.XXXXXX)"; TMPFILES+=("$tmp")
+    # --flat-playlist lists entries without visiting each video page. Printing
+    # the id alongside the URL covers entries that carry no URL of their own.
+    if ! yt-dlp --flat-playlist --print "%(url)s|%(id)s" "$url" > "$tmp" 2>/dev/null; then
+      echo "Warning: could not read that playlist; keeping the URL as it is." >&2
+      out+=("$url"); continue
+    fi
+    n=0
+    while IFS= read -r line; do
+      [[ -z "$line" ]] && continue
+      entry="${line%%|*}"
+      if [[ "$entry" == http* ]]; then
+        vid="$entry"
+      else
+        vid="${line##*|}"
+        [[ -z "$vid" || "$vid" == "NA" ]] && continue
+        vid="https://www.youtube.com/watch?v=$vid"
+      fi
+      out+=("$vid")
+      n=$((n + 1))
+    done < "$tmp"
+    if (( n == 0 )); then
+      echo "Warning: that playlist listed no videos; keeping the URL as it is." >&2
+      out+=("$url")
+    else
+      echo "  -> $n video(s)." >&2
+    fi
+  done
+  URLS=("${out[@]}")
+}
+
+# ---------------------------------------------------------------------------
+# Batch loop: every URL is downloaded (and optionally split) on its own.
+# ---------------------------------------------------------------------------
+
+# Everything one video needs, from chapter discovery through splitting. Returns
+# the status of whichever step failed, so the caller can record it and move on.
+process_one() {
+  local url="$1" st
+  ARGS=("${BASE_ARGS[@]}")
+  PATHFILE=""
+  CHAPTERS_TSV=""
+  if (( CHAPTERS )); then
+    build_chapters_tsv "$url" || return 1
+    # Capture the final output path so we know which file to split.
+    PATHFILE="$(mktemp -t yt-download-path.XXXXXX)"; ITEM_TMPFILES+=("$PATHFILE")
+    ARGS+=(--print-to-file "after_move:filepath" "$PATHFILE")
+  fi
+  if (( ! SKIP_SPACE_CHECK )); then
+    check_disk_space "$url" || return $?
+  fi
+  # `|| st=$?` is how the status is captured: errexit exempts the left-hand
+  # side of ||, so no set +e dance is needed (and toggling errexit inside a
+  # called function would defeat one anyway).
+  st=0
+  run_download "$url" || st=$?
+  if (( st != 0 )); then
+    return "$st"
+  fi
+  if (( CHAPTERS )); then
+    # With --skip-existing, a video already on disk is never moved into place,
+    # so no path is printed. There is nothing new to split; say so and move on
+    # rather than treating it as a failure.
+    if [[ ! -s "$PATHFILE" ]]; then
+      echo "Already downloaded; leaving its existing chapter files alone." >&2
+      return 0
+    fi
+    split_into_chapters || return 1
+  fi
+  return 0
+}
+
+expand_urls
+
+total=${#URLS[@]}
+failed_urls=()
+failed_codes=()
+done_count=0
+last_status=0
+idx=0
+
+for url in "${URLS[@]}"; do
+  idx=$((idx + 1))
+  # This marker is what the GUI reads to show overall batch progress; keep the
+  # "[n/m]" shape if you change it.
+  if (( total > 1 )); then
+    echo >&2
+    echo "=== [$idx/$total] $url" >&2
+  fi
+  status=0
+  process_one "$url" || status=$?
+  cleanup_item
+  if (( status == 0 )); then
+    done_count=$((done_count + 1))
+  else
+    last_status=$status
+    failed_urls+=("$url")
+    failed_codes+=("$status")
+    if (( STOP_ON_ERROR )); then
+      if (( total > 1 )); then
+        echo "Stopping here: [$idx/$total] failed (exit $status) and --stop-on-error is set." >&2
+      fi
+      break
+    fi
+    if (( total > 1 )); then
+      echo "That one failed (exit $status); carrying on with the next URL." >&2
+    fi
+  fi
+done
+
+# A single URL keeps its exact exit status, exactly as before batch mode.
+if (( total == 1 )); then
+  exit "$last_status"
 fi
 
-set +e
-run_download
-status=$?
-set -e
-(( status != 0 )) && exit "$status"
-
-if (( CHAPTERS )); then
-  split_into_chapters
+echo >&2
+echo "Batch summary: $done_count of $total succeeded, ${#failed_urls[@]} failed." >&2
+if (( ${#failed_urls[@]} > 0 )); then
+  i=0
+  while (( i < ${#failed_urls[@]} )); do
+    echo "  failed (exit ${failed_codes[$i]}): ${failed_urls[$i]}" >&2
+    i=$((i + 1))
+  done
+  exit 1
 fi
+exit 0

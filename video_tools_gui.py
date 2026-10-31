@@ -3,7 +3,8 @@
 
 Tabs:
   Clip      clip_video.py   - cut a segment from a local file or YouTube link
-  Download  yt-download.sh  - download a YouTube video, optionally by chapter
+  Download  yt-download.sh  - download YouTube videos (one, many or a playlist),
+                              optionally split by chapter
   Mix       mix_videos.py   - concat (with crossfades), grid or blend videos
 
 Each tab builds the same command you would type in a terminal and runs it,
@@ -90,6 +91,9 @@ PRESETS = ["ultrafast", "superfast", "veryfast", "faster", "fast", "medium", "sl
 
 FFMPEG_TIME_RE = re.compile(r"time=\s*(\d+):(\d+):(\d+(?:\.\d+)?)")
 PERCENT_RE = re.compile(r"(\d{1,3}(?:\.\d+)?)%")
+# yt-download.sh prints "=== [3/7] <url>" before each video of a batch, which is
+# how we turn one video's progress into progress over the whole batch.
+BATCH_RE = re.compile(r"^=== \[(\d+)/(\d+)\]", re.M)
 
 
 def tool_cmd(name, *args):
@@ -132,6 +136,8 @@ class Runner:
         self.queue = queue.Queue()
         self.total_seconds = None
         self.on_finish = None
+        self.batch_index = 0
+        self.batch_total = 0
         self.run_buttons = []
         self.stop_button = None
         self.log.mark_set("linestart", "end-1c")
@@ -148,6 +154,7 @@ class Runner:
             return
         self.total_seconds = total_seconds
         self.on_finish = on_finish
+        self.batch_index = self.batch_total = 0
         self._write(f"\n$ {shlex.join(cmd)}\n", "cmd")
         popen_kw = dict(cwd=cwd, env=tool_env(), stdout=subprocess.PIPE,
                         stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL)
@@ -217,7 +224,22 @@ class Runner:
                 self.log.insert("end-1c", piece, tag)
         self.log.see("end")
 
+    def note(self, text):
+        """Write a line of our own into the log, as context for what follows."""
+        self._write(text if text.endswith("\n") else text + "\n", "cmd")
+
+    def _determinate(self):
+        if str(self.progress.cget("mode")) != "determinate":
+            self.progress.stop()
+            self.progress.configure(mode="determinate")
+
     def _update_progress(self, text):
+        markers = BATCH_RE.findall(text)
+        if markers:
+            self.batch_index, self.batch_total = (int(n) for n in markers[-1])
+            self._determinate()
+            self.progress.configure(value=100 * (self.batch_index - 1) / self.batch_total)
+            self.status.set(f"Video {self.batch_index} of {self.batch_total}…")
         percent = None
         if self.total_seconds:
             times = FFMPEG_TIME_RE.findall(text)
@@ -228,16 +250,28 @@ class Runner:
             found = PERCENT_RE.findall(text)
             if found:
                 percent = float(found[-1])
-        if percent is not None:
-            if str(self.progress.cget("mode")) != "determinate":
-                self.progress.stop()
-                self.progress.configure(mode="determinate")
-            self.progress.configure(value=max(0, min(100, percent)))
+        if percent is None:
+            return
+        percent = max(0, min(100, percent))
+        self._determinate()
+        if self.batch_total > 1:
+            # One video's own progress fills only its slice of the batch.
+            done = self.batch_index - 1 + percent / 100
+            self.progress.configure(value=100 * done / self.batch_total)
+            self.status.set(
+                f"Video {self.batch_index} of {self.batch_total} — {percent:.0f}%")
+        else:
+            self.progress.configure(value=percent)
 
     def _finished(self, code):
         self.proc = None
         self.progress.stop()
-        self.progress.configure(mode="determinate", value=100 if code == 0 else 0)
+        # A failed batch usually still got most of the way, so leave the bar
+        # where it stopped rather than implying nothing happened.
+        if code != 0 and self.batch_total > 1:
+            self.progress.configure(mode="determinate")
+        else:
+            self.progress.configure(mode="determinate", value=100 if code == 0 else 0)
         self._set_running(False)
         if code == 0:
             self.status.set("Done.")
@@ -376,7 +410,6 @@ class DownloadTab(ttk.Frame):
     def __init__(self, parent, runner):
         super().__init__(parent, padding=12)
         self.runner = runner
-        self.url = tk.StringVar()
         self.outdir = tk.StringVar(value=DEFAULT_OUTDIR)
         self.fmt = tk.StringVar(value="mp4")
         self.max_height = tk.StringVar(value="Best")
@@ -385,32 +418,51 @@ class DownloadTab(ttk.Frame):
         self.segments_only = tk.BooleanVar()
         self.keep = tk.BooleanVar()
         self.split_file = tk.StringVar()
+        self.expand_playlists = tk.BooleanVar(value=True)
+        self.skip_existing = tk.BooleanVar(value=True)
+        self.stop_on_error = tk.BooleanVar()
+        self.count = tk.StringVar()
         self.columnconfigure(1, weight=1)
 
-        row_label(self, "YouTube URL", 0)
-        ttk.Entry(self, textvariable=self.url).grid(row=0, column=1, columnspan=2, sticky="ew")
+        ttk.Label(self, text="YouTube URLs").grid(row=0, column=0, sticky="nw",
+                                                  padx=(0, 8), pady=3)
+        urls = ttk.Frame(self)
+        urls.grid(row=0, column=1, columnspan=2, sticky="ew")
+        urls.columnconfigure(0, weight=1)
+        self.urls_text = tk.Text(urls, height=4, wrap="none", undo=True)
+        self.urls_text.grid(row=0, column=0, sticky="ew")
+        bar = ttk.Scrollbar(urls, orient="vertical", command=self.urls_text.yview)
+        bar.grid(row=0, column=1, sticky="ns")
+        self.urls_text.configure(yscrollcommand=bar.set)
 
-        row_label(self, "Output folder", 1)
-        ttk.Entry(self, textvariable=self.outdir).grid(row=1, column=1, sticky="ew")
+        hint = ttk.Frame(self)
+        hint.grid(row=1, column=1, columnspan=2, sticky="ew")
+        ttk.Label(hint, text="One per line — they download one after another. A playlist "
+                             "URL downloads every video in it.",
+                  foreground="gray").pack(side="left")
+        ttk.Label(hint, textvariable=self.count, foreground="gray").pack(side="right")
+
+        row_label(self, "Output folder", 2)
+        ttk.Entry(self, textvariable=self.outdir).grid(row=2, column=1, sticky="ew")
         ttk.Button(self, text="Browse…", command=lambda: browse_dir(self.outdir)).grid(
-            row=1, column=2, padx=(6, 0))
+            row=2, column=2, padx=(6, 0))
 
-        row_label(self, "Format", 2)
+        row_label(self, "Format", 3)
         fmt = ttk.Frame(self)
-        fmt.grid(row=2, column=1, sticky="w")
+        fmt.grid(row=3, column=1, sticky="w")
         ttk.Radiobutton(fmt, text="MP4 (plays everywhere, up to 1080p)", value="mp4",
                         variable=self.fmt).pack(side="left")
         ttk.Radiobutton(fmt, text="MKV (highest quality, 4K)", value="mkv",
                         variable=self.fmt).pack(side="left", padx=(12, 0))
 
-        row_label(self, "Max resolution", 3)
+        row_label(self, "Max resolution", 4)
         ttk.Combobox(self, textvariable=self.max_height, width=8, state="readonly",
                      values=["Best", "2160", "1440", "1080", "720", "480", "360"]).grid(
-            row=3, column=1, sticky="w")
+            row=4, column=1, sticky="w")
 
-        row_label(self, "Chapters", 4)
+        row_label(self, "Chapters", 5)
         chap = ttk.Frame(self)
-        chap.grid(row=4, column=1, columnspan=2, sticky="w")
+        chap.grid(row=5, column=1, columnspan=2, sticky="w")
         ttk.Checkbutton(chap, text="Split into chapters", variable=self.chapters,
                         command=self.update_state).pack(side="left")
         self.precise_cb = ttk.Checkbutton(chap, text="Frame-exact (re-encode)",
@@ -420,19 +472,30 @@ class DownloadTab(ttk.Frame):
                                            variable=self.segments_only)
         self.segments_cb.pack(side="left", padx=(12, 0))
 
-        row_label(self, "Split existing file", 5)
-        ttk.Entry(self, textvariable=self.split_file).grid(row=5, column=1, sticky="ew")
-        ttk.Button(self, text="Browse…", command=self.pick_split_file).grid(
-            row=5, column=2, padx=(6, 0))
+        row_label(self, "Several videos", 6)
+        batch = ttk.Frame(self)
+        batch.grid(row=6, column=1, columnspan=2, sticky="w")
+        ttk.Checkbutton(batch, text="Expand playlists", variable=self.expand_playlists
+                        ).pack(side="left")
+        ttk.Checkbutton(batch, text="Skip ones already downloaded",
+                        variable=self.skip_existing).pack(side="left", padx=(12, 0))
+        ttk.Checkbutton(batch, text="Stop at the first failure",
+                        variable=self.stop_on_error).pack(side="left", padx=(12, 0))
+
+        row_label(self, "Split existing file", 7)
+        self.split_entry = ttk.Entry(self, textvariable=self.split_file)
+        self.split_entry.grid(row=7, column=1, sticky="ew")
+        self.split_browse = ttk.Button(self, text="Browse…", command=self.pick_split_file)
+        self.split_browse.grid(row=7, column=2, padx=(6, 0))
         ttk.Label(self, text="Optional: split a file you already have using the URL's chapters "
-                             "(nothing is downloaded).", foreground="gray").grid(
-            row=6, column=1, columnspan=2, sticky="w")
+                             "(nothing is downloaded). One URL only.",
+                  foreground="gray").grid(row=8, column=1, columnspan=2, sticky="w")
 
         ttk.Checkbutton(self, text="Keep intermediate files", variable=self.keep).grid(
-            row=7, column=1, sticky="w", pady=6)
+            row=9, column=1, sticky="w", pady=6)
 
         buttons = ttk.Frame(self)
-        buttons.grid(row=8, column=0, columnspan=3, sticky="ew", pady=(8, 0))
+        buttons.grid(row=10, column=0, columnspan=3, sticky="ew", pady=(8, 0))
         for text, command in [("Update yt-dlp", self.update_ytdlp),
                               ("List formats", self.list_formats)]:
             b = ttk.Button(buttons, text=text, command=command)
@@ -444,14 +507,37 @@ class DownloadTab(ttk.Frame):
         ttk.Button(buttons, text="Open folder", command=lambda: open_in_finder(self.outdir.get())
                    ).pack(side="right", padx=(0, 6))
         self.split_file.trace_add("write", lambda *_: self.update_state())
+        # A Text has no trace; <<Modified>> fires once, so re-arm it each time.
+        self.urls_text.bind("<<Modified>>", self.on_urls_modified)
         self.update_state()
 
+    def on_urls_modified(self, _event=None):
+        self.urls_text.edit_modified(False)
+        self.update_state()
+
+    def urls(self):
+        """Every non-blank line of the URL box, in order, duplicates dropped."""
+        seen, out = set(), []
+        for line in self.urls_text.get("1.0", "end").splitlines():
+            line = line.strip()
+            if line and line not in seen:
+                seen.add(line)
+                out.append(line)
+        return out
+
     def update_state(self):
-        on = self.chapters.get() or bool(self.split_file.get().strip())
+        urls = self.urls()
+        self.count.set(f"{len(urls)} URL{'s' if len(urls) != 1 else ''}" if urls else "")
+        split_file = bool(self.split_file.get().strip())
+        on = self.chapters.get() or split_file
         self.precise_cb.configure(state="normal" if on else "disabled")
         self.segments_cb.configure(
-            state="normal" if self.chapters.get() and not self.split_file.get().strip()
-            else "disabled")
+            state="normal" if self.chapters.get() and not split_file else "disabled")
+        # Splitting a local file takes its chapters from one video, so it is
+        # only offered while the box holds a single URL.
+        single = len(urls) <= 1
+        self.split_entry.configure(state="normal" if single else "disabled")
+        self.split_browse.configure(state="normal" if single else "disabled")
 
     def pick_split_file(self):
         path = filedialog.askopenfilename(filetypes=VIDEO_TYPES)
@@ -473,11 +559,11 @@ class DownloadTab(ttk.Frame):
             return None
         return [bash, str(HERE / "yt-download.sh")]
 
-    def need_url(self):
-        url = self.url.get().strip()
-        if not url:
-            messagebox.showerror("Download", "Paste a YouTube URL first.")
-        return url
+    def need_urls(self):
+        urls = self.urls()
+        if not urls:
+            messagebox.showerror("Download", "Paste at least one YouTube URL first.")
+        return urls
 
     def update_ytdlp(self):
         script = self.script()
@@ -485,16 +571,19 @@ class DownloadTab(ttk.Frame):
             self.runner.start(script + ["--update"], cwd=str(HERE))
 
     def list_formats(self):
-        url = self.need_url()
-        if not url or not ensure_ready(self.runner, ["yt-dlp"]):
+        urls = self.need_urls()
+        if not urls or not ensure_ready(self.runner, ["yt-dlp"]):
             return
         script = self.script()
-        if script:
-            self.runner.start(script + ["-F", url], cwd=str(HERE))
+        if not script:
+            return
+        if len(urls) > 1:
+            self.runner.note(f"Listing formats for the first URL only: {urls[0]}")
+        self.runner.start(script + ["-F", urls[0]], cwd=str(HERE))
 
     def run(self):
-        url = self.need_url()
-        if not url:
+        urls = self.need_urls()
+        if not urls:
             return
         if not ensure_ready(self.runner, ["ffmpeg", "yt-dlp"]):
             return
@@ -503,6 +592,11 @@ class DownloadTab(ttk.Frame):
             return
         split_file = self.split_file.get().strip()
         if split_file:
+            if len(urls) > 1:
+                return messagebox.showerror(
+                    "Download",
+                    "Splitting an existing file uses one video's chapters, so leave "
+                    "a single URL in the box (or clear the file field to download).")
             if not Path(split_file).is_file():
                 return messagebox.showerror("Download", f"File not found:\n{split_file}")
             cmd += ["--split-file", split_file]
@@ -518,9 +612,15 @@ class DownloadTab(ttk.Frame):
                 cmd.append("--chapters")
                 if self.segments_only.get():
                     cmd.append("--segments-only")
+            if not self.expand_playlists.get():
+                cmd.append("--no-playlist-expand")
+            if self.skip_existing.get():
+                cmd.append("--skip-existing")
+            if self.stop_on_error.get():
+                cmd.append("--stop-on-error")
         if self.precise.get() and (split_file or self.chapters.get()):
             cmd.append("--precise")
-        cmd.append(url)
+        cmd += urls
         self.runner.start(cmd, cwd=str(HERE))
 
 
