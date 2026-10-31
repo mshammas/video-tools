@@ -16,7 +16,9 @@ The Help menu checks GitHub Releases for a newer version (see updates.py); the
 daily automatic check can be switched off there.
 
 Runs on macOS, Linux and Windows. The Download tab shells out to yt-download.sh,
-so on Windows it needs bash (WSL or Git Bash); the other tabs are pure Python.
+so on Windows it needs Git Bash (from Git for Windows); the other tabs are pure
+Python. WSL's bash cannot be used: it runs in the Linux VM, which has neither
+the Windows drive paths nor the Windows ffmpeg/yt-dlp this app installs.
 
 Run:  python3 video_tools_gui.py
 """
@@ -25,7 +27,6 @@ import os
 import queue
 import re
 import shlex
-import shutil
 import signal
 import subprocess
 import sys
@@ -133,6 +134,17 @@ def tool_env():
     return env
 
 
+def _decode(chunk):
+    """Child output as text. Some Windows programs (the WSL launcher, a few
+    installers) answer in UTF-16, which read as UTF-8 becomes text riddled with
+    NULs — the log would swallow it and the failure would look silent."""
+    if b"\x00" in chunk:
+        text = chunk.decode("utf-16-le", errors="replace")
+    else:
+        text = chunk.decode("utf-8", errors="replace")
+    return text.replace("\x00", "")
+
+
 class Runner:
     """Runs one command at a time and streams its output into a Text widget."""
 
@@ -201,7 +213,7 @@ class Runner:
             chunk = os.read(proc.stdout.fileno(), 4096)
             if not chunk:
                 break
-            self.queue.put(("out", chunk.decode("utf-8", errors="replace")))
+            self.queue.put(("out", _decode(chunk)))
         self.queue.put(("done", proc.wait()))
 
     def _drain(self):
@@ -315,16 +327,19 @@ def ensure_ready(runner, tools):
     """Return True if every tool is available. Otherwise offer to fetch the
     missing ones (deps.py downloads prebuilt binaries for users with no package
     manager), run that in the log, and return False so the caller re-tries after."""
-    missing = [t for t in tools if shutil.which(t) is None]
+    missing = [t for t in tools if deps.which(t) is None]
     if not missing:
         return True
     if runner.busy:
         messagebox.showinfo("Busy", "Finish the current job first, then try again.")
         return False
+    # "bash" is an odd thing to offer a Windows user; name what actually installs.
+    names = ["Git for Windows (it provides bash)" if t == "bash" and os.name == "nt"
+             else t for t in missing]
     if messagebox.askyesno(
             "Set up tools",
             "These tools are needed and will be downloaded now:\n    "
-            + ", ".join(missing)
+            + ", ".join(names)
             + "\n\nThis is a one-time setup. Progress shows in the log below — "
               "click the button again once it finishes."):
         runner.start(tool_cmd("deps", *missing), cwd=str(HERE))
@@ -551,19 +566,27 @@ class DownloadTab(ttk.Frame):
             self.split_file.set(path)
 
     def script(self):
-        """Prefix to run yt-download.sh. Finds bash cross-platform (WSL/Git Bash
-        on Windows); returns None with a helpful dialog if bash isn't available."""
-        bash = shutil.which("bash")
-        if not bash and Path("/bin/bash").exists():
-            bash = "/bin/bash"
+        """Prefix to run yt-download.sh. Finds bash cross-platform (Git Bash on
+        Windows); returns None with a helpful dialog if bash isn't available."""
+        bash = deps.find_bash()
         if not bash:
             messagebox.showerror(
                 "Download",
                 "The Download tab runs yt-download.sh, which needs 'bash'.\n\n"
-                "Windows: install WSL ('wsl --install') or Git for Windows "
-                "(which includes Git Bash), then reopen this app.")
+                + ("Install Git for Windows (https://git-scm.com/download/win), "
+                   "which includes Git Bash, then reopen this app.\n\n"
+                   "WSL's bash will not do: it runs inside the Linux VM, which "
+                   "cannot open your Windows folders or use the ffmpeg and "
+                   "yt-dlp this app installs."
+                   if os.name == "nt" else
+                   "Install bash with your package manager, then reopen this app."))
             return None
-        return [bash, str(HERE / "yt-download.sh")]
+        path = str(HERE / "yt-download.sh")
+        if os.name == "nt":
+            # Git Bash takes Windows paths, but forward slashes keep its MSYS
+            # layer from reading a backslash as an escape.
+            path = path.replace("\\", "/")
+        return [bash, path]
 
     def need_urls(self):
         urls = self.urls()
@@ -578,7 +601,7 @@ class DownloadTab(ttk.Frame):
 
     def list_formats(self):
         urls = self.need_urls()
-        if not urls or not ensure_ready(self.runner, ["yt-dlp"]):
+        if not urls or not ensure_ready(self.runner, ["bash", "yt-dlp"]):
             return
         script = self.script()
         if not script:
@@ -591,7 +614,7 @@ class DownloadTab(ttk.Frame):
         urls = self.need_urls()
         if not urls:
             return
-        if not ensure_ready(self.runner, ["ffmpeg", "yt-dlp"]):
+        if not ensure_ready(self.runner, ["bash", "ffmpeg", "yt-dlp"]):
             return
         cmd = self.script()
         if not cmd:

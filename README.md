@@ -103,6 +103,7 @@ Download YouTube videos in their highest available resolution. It takes one URL 
 
 - [yt-dlp](https://github.com/yt-dlp/yt-dlp) and [ffmpeg](https://ffmpeg.org/) on your PATH: `brew install yt-dlp ffmpeg`
 - Python 3 (only needed for `--chapters`)
+- On Windows, a bash to run it in: [Git for Windows](https://git-scm.com/download/win) gives you Git Bash, which is the one the GUI uses. Running it inside WSL works too, but then yt-dlp, ffmpeg and the paths you give it all have to be WSL-side.
 
 ### Usage
 
@@ -319,6 +320,7 @@ A desktop window for `clip_video.py`, `yt-download.sh` and `mix_videos.py`. It h
 
 - Python 3.8+ with tkinter (included with the python.org and Homebrew Python installs)
 - The same tools the scripts need: ffmpeg, and yt-dlp for YouTube
+- On Windows, [Git for Windows](https://git-scm.com/download/win) for the Download tab, which runs `yt-download.sh` in Git Bash. WSL's `bash.exe` is deliberately skipped: it runs in the Linux VM, which cannot open your `C:\` folders or use the ffmpeg and yt-dlp the app installs on the Windows side. The Clip and Mix tabs are pure Python and need no bash.
 
 ### Usage
 

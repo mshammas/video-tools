@@ -41,6 +41,8 @@ PKG_NAMES = {
     "yt-dlp":  {"default": "yt-dlp", "winget": "yt-dlp.yt-dlp"},
     "python3": {"default": "python3", "brew": "python", "winget": "Python.Python.3.12",
                 "choco": "python", "scoop": "python"},
+    # On Windows the bash we can use comes from Git for Windows (see find_bash).
+    "bash":    {"default": "bash", "winget": "Git.Git", "choco": "git", "scoop": "git"},
 }
 
 HINTS = {
@@ -49,6 +51,8 @@ HINTS = {
     "yt-dlp":  'python3 -m pip install -U --pre "yt-dlp[default]"  '
                "— https://github.com/yt-dlp/yt-dlp#installation",
     "python3": "install Python 3 — https://www.python.org/downloads/",
+    "bash":    "install Git for Windows, which includes Git Bash — "
+               "https://git-scm.com/download/win",
 }
 
 
@@ -90,7 +94,54 @@ def probe_name(tool):
     return PROBE.get(tool, tool)
 
 
+# yt-download.sh needs bash. On Windows the "bash.exe" that turns up on PATH is
+# normally the WSL launcher — an app-execution alias under WindowsApps, or
+# System32\bash.exe. That bash runs inside the Linux VM, where a C:\... path does
+# not exist and the Windows ffmpeg/yt-dlp are not on PATH, so it cannot run the
+# script; when WSL has no distribution installed it also fails before printing
+# anything legible (its message is UTF-16). Git for Windows ships a native Win32
+# bash that understands Windows paths and inherits the Windows PATH, so that is
+# the one we look for.
+
+def _is_wsl_bash(path):
+    p = str(path).lower().replace("/", "\\")
+    return ("\\windowsapps\\" in p or "\\system32\\" in p or "\\sysnative\\" in p)
+
+
+def _git_bash_candidates():
+    """Where Git for Windows puts bash.exe, whichever installer was used."""
+    env = os.environ.get
+    roots = [env("ProgramFiles"), env("ProgramW6432"), env("ProgramFiles(x86)")]
+    if env("LOCALAPPDATA"):
+        roots.append(str(Path(env("LOCALAPPDATA")) / "Programs"))
+    for root in roots:
+        if root:
+            yield Path(root) / "Git" / "bin" / "bash.exe"
+    yield Path.home() / "scoop" / "apps" / "git" / "current" / "bin" / "bash.exe"
+    git = shutil.which("git")                      # typically ...\Git\cmd\git.exe
+    if git:
+        yield Path(git).resolve().parent.parent / "bin" / "bash.exe"
+
+
+def find_bash():
+    """Path to a bash that can run yt-download.sh, or None. Skips WSL's bash."""
+    if os.name != "nt":
+        found = shutil.which("bash")
+        if found:
+            return found
+        return "/bin/bash" if Path("/bin/bash").is_file() else None
+    found = shutil.which("bash")
+    if found and not _is_wsl_bash(found):
+        return found
+    for cand in _git_bash_candidates():
+        if cand.is_file():
+            return str(cand)
+    return None
+
+
 def which(tool):
+    if tool == "bash":
+        return find_bash()
     return shutil.which(probe_name(tool))
 
 
@@ -269,6 +320,8 @@ def ensure(tools, auto_install=True, on_log=print):
 
 
 def hint(tool):
+    if tool == "bash" and os.name != "nt":
+        return "install bash with your package manager"
     return HINTS.get(tool, f"install {tool}")
 
 

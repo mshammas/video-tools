@@ -74,8 +74,9 @@
 # macOS; apt/dnf/yum/pacman/zypper on Linux; winget/choco/scoop on Windows —
 # unless --no-install is given, in which case it errors with instructions.
 #
-# Platforms: runs on macOS and Linux directly. On Windows, run it under WSL or
-# Git Bash (any POSIX bash); native cmd/PowerShell is not supported.
+# Platforms: runs on macOS and Linux directly. On Windows, run it under Git Bash
+# (from Git for Windows), or inside WSL with Linux-side yt-dlp/ffmpeg and
+# Linux-side paths; native cmd/PowerShell is not supported.
 #
 # Notes:
 #   * MP4 is the default output (H.264 + AAC, remuxed with +faststart): the most
