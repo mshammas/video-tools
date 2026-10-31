@@ -376,3 +376,11 @@ python3 -m unittest discover -s tests
 ```
 
 It finishes in well under a second and runs on macOS, Linux and Windows alike — CI runs it on all three for every push and pull request. The expected command lines were captured from `yt-download.sh`, the bash script the downloader replaced, so the tests check the port still behaves the way the script did. See [tests/README.md](tests/README.md) for how the goldens were made and what they cover.
+
+## Licence
+
+MIT — see [LICENSE](LICENSE).
+
+ffmpeg and yt-dlp are separate projects under their own licences. The installers do
+not bundle them: `deps.py` fetches them onto your machine the first time a tool needs
+them, so nothing here redistributes them.
