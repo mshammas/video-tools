@@ -458,8 +458,9 @@ class DownloadTab(ttk.Frame):
 
         hint = ttk.Frame(self)
         hint.grid(row=1, column=1, columnspan=2, sticky="ew")
-        ttk.Label(hint, text="One per line — they download one after another. A playlist "
-                             "URL downloads every video in it.",
+        ttk.Label(hint, text="One per line — they download one after another. With "
+                             "“Expand playlists” on, a playlist link downloads every "
+                             "video in it; untick it for just the one video.",
                   foreground="gray").pack(side="left")
         ttk.Label(hint, textvariable=self.count, foreground="gray").pack(side="right")
 
@@ -616,7 +617,12 @@ class DownloadTab(ttk.Frame):
                 cmd.append("--chapters")
                 if self.segments_only.get():
                     cmd.append("--segments-only")
-            if not self.expand_playlists.get():
+            if self.expand_playlists.get():
+                # A '...watch?v=...&list=...' link (copied while watching) names
+                # one video inside a playlist; the box being ticked says the
+                # whole playlist was meant.
+                cmd.append("--yes-playlist")
+            else:
                 cmd.append("--no-playlist-expand")
             if self.skip_existing.get():
                 cmd.append("--skip-existing")
